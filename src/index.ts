@@ -6,12 +6,15 @@
  */
 
 import { serve } from '@hono/node-server'
+import { getLogLevels, isLogLevel } from '@logtape/logtape'
 import { type CliOverrides, loadConfig } from '@proxy/config/env'
 import { getConfigPath, loadConfigFromFile } from '@proxy/config/schema'
+import { configureLogging, defaultLogFormat, proxyLogger } from '@proxy/logging'
 import { getAvailableModels, initRegistry } from '@proxy/pi/registry'
 import { createApp } from '@proxy/server/app'
-import { logShutdown, logStartup } from '@proxy/server/logging'
 import { defineCommand, runMain } from 'citty'
+
+const lifecycleLogger = proxyLogger('server')
 
 const JSON_INDENT = 2
 
@@ -29,6 +32,7 @@ interface CliArgs {
   'remote-images'?: boolean | undefined
   'max-body-size'?: string | undefined
   'upstream-timeout'?: string | undefined
+  'log-level'?: string | undefined
 }
 
 /** Build CLI overrides from parsed args. */
@@ -49,6 +53,13 @@ function buildCliOverrides(args: CliArgs): CliOverrides {
   if (mb !== undefined) cli.maxBodySizeMb = mb
   const sec = parsePositiveIntArg(args['upstream-timeout'])
   if (sec !== undefined) cli.upstreamTimeoutSec = sec
+  const logLevel = args['log-level']
+  if (logLevel !== undefined) {
+    if (!isLogLevel(logLevel)) {
+      throw new Error(`--log-level must be one of: ${getLogLevels().join(', ')}`)
+    }
+    cli.logLevel = logLevel
+  }
   return cli
 }
 
@@ -82,37 +93,44 @@ const main = defineCommand({
       type: 'string',
       description: 'Upstream timeout in seconds (default: 120)'
     },
+    'log-level': {
+      type: 'string',
+      description: `Lowest log level written: ${getLogLevels().join(', ')} (default: from config or info)`
+    },
     'config': {
       type: 'boolean',
       description: 'Show effective configuration and exit'
     }
   },
   run: async ({ args }) => {
-    // --config: show effective config and exit
+    // --config: show effective config and exit. Command output, not a log line, so it goes to stdout.
     if (args.config === true) {
       const file = loadConfigFromFile()
-      console.error(`Config file: ${getConfigPath()}`)
-      console.error(JSON.stringify(file, null, JSON_INDENT))
+      process.stdout.write(`Config file: ${getConfigPath()}\n`)
+      process.stdout.write(`${JSON.stringify(file, null, JSON_INDENT)}\n`)
       return
     }
 
     const config = loadConfig(buildCliOverrides(args))
+    configureLogging({ level: config.logLevel, format: defaultLogFormat() })
 
     // Initialize pi integration
     const loadError = await initRegistry()
     if (loadError !== undefined) {
-      console.error(`[warn] models.json load error: ${loadError}`)
-      console.error('[warn] Continuing with built-in models only.')
+      lifecycleLogger.warn('models.json failed to load; continuing with built-in models only', {
+        error: loadError
+      })
     }
 
     const models = getAvailableModels()
     const app = createApp(config)
 
-    logStartup(config.host, config.port, models.length)
-
-    console.error(
-      `pi-proxy listening on http://${config.host}:${String(config.port)} (${String(models.length)} models)`
-    )
+    lifecycleLogger.info('Listening on http://{host}:{port} with {modelCount} models', {
+      host: config.host,
+      port: config.port,
+      modelCount: models.length,
+      logLevel: config.logLevel
+    })
 
     // --- Graceful shutdown ---
     let shutdownInitiated = false
@@ -121,15 +139,16 @@ const main = defineCommand({
       if (shutdownInitiated) return
       shutdownInitiated = true
 
-      logShutdown(signal)
-      console.error(`[info] Received ${signal}, shutting down gracefully...`)
+      lifecycleLogger.info('Received {signal}, shutting down', { signal })
 
       const SHUTDOWN_TIMEOUT_MS = 10_000
 
       server.close()
 
       setTimeout(() => {
-        console.error('[warn] Shutdown timeout reached, forcing exit')
+        lifecycleLogger.warn('Shutdown timed out after {timeoutMs} ms; forcing exit', {
+          timeoutMs: SHUTDOWN_TIMEOUT_MS
+        })
         process.exit(1)
       }, SHUTDOWN_TIMEOUT_MS).unref()
     }

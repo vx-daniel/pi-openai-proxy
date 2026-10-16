@@ -9,6 +9,7 @@
 
 import type { ServerConfig } from '@proxy/config/env'
 import { loadConfigFromFile } from '@proxy/config/schema'
+import { proxyLogger } from '@proxy/logging'
 import { type ConversionSuccess, convertMessages } from '@proxy/openai/messages'
 import {
   computeModelExposure,
@@ -41,12 +42,6 @@ import {
   HTTP_UNAUTHORIZED,
   HTTP_UNPROCESSABLE_ENTITY
 } from '@proxy/server/http-status'
-import {
-  type LogContext,
-  logChatRequest,
-  logError,
-  logUpstreamOverload
-} from '@proxy/server/logging'
 import type { ProxyEnv } from '@proxy/server/types'
 import { type Context, Hono } from 'hono'
 import { stream as honoStream } from 'hono/streaming'
@@ -89,17 +84,26 @@ async function getExposure(configReader: ExposureConfigReader): Promise<ModelExp
   return outcome
 }
 
+const chatLogger = proxyLogger('server', 'chat')
+
 /**
- * Map upstream error, log it, and emit a structured warn for rate limit / overload.
+ * Map an upstream error and log it: an error line for the failure, plus a warning for rate limiting
+ * or overload so those can be counted apart from real failures. The request's IDs come from the
+ * logging context.
  */
-function handleUpstreamError(
-  logContext: LogContext,
-  err: unknown
-): { status: UpstreamErrorStatus; body: OpenAIError } {
+function handleUpstreamError(err: unknown): { status: UpstreamErrorStatus; body: OpenAIError } {
   const mapped = mapUpstreamError(err)
-  logError(logContext, mapped.body.error.message, err instanceof Error ? err.message : undefined)
+  chatLogger.error('Upstream call failed with {status}: {message}', {
+    status: mapped.status,
+    message: mapped.body.error.message,
+    code: mapped.body.error.code,
+    detail: err instanceof Error ? err.message : undefined
+  })
   if (mapped.status === HTTP_TOO_MANY_REQUESTS || mapped.status === HTTP_SERVICE_UNAVAILABLE) {
-    logUpstreamOverload(logContext, mapped.status, mapped.body.error.code ?? 'unknown')
+    chatLogger.warn('Upstream overloaded ({upstreamStatus}, {code})', {
+      upstreamStatus: mapped.status,
+      code: mapped.body.error.code ?? 'unknown'
+    })
   }
   return mapped
 }
@@ -242,7 +246,7 @@ function streamChat(honoContext: ProxyContext, job: CompletionJob): Response {
         await stream.write(frame)
       }
     } catch (err: unknown) {
-      const mapped = handleUpstreamError({ requestId, method: 'POST', path: CHAT_PATH }, err)
+      const mapped = handleUpstreamError(err)
       // For streams, write an error event and close
       const errorChunk = JSON.stringify({
         error: mapped.body.error
@@ -261,16 +265,13 @@ async function completeChat(honoContext: ProxyContext, job: CompletionJob): Prom
     // Detect upstream errors reported via stopReason
     if (message.stopReason === 'error' || message.stopReason === 'aborted') {
       const errorMessage = message.errorMessage ?? 'Upstream provider error'
-      const mapped = handleUpstreamError(
-        { requestId, method: 'POST', path: CHAT_PATH },
-        new Error(errorMessage)
-      )
+      const mapped = handleUpstreamError(new Error(errorMessage))
       return honoContext.json(mapped.body, mapped.status)
     }
 
     return honoContext.json(buildChatCompletion(requestId, canonicalModelId, message))
   } catch (err: unknown) {
-    const mapped = handleUpstreamError({ requestId, method: 'POST', path: CHAT_PATH }, err)
+    const mapped = handleUpstreamError(err)
     return honoContext.json(mapped.body, mapped.status)
   }
 }
@@ -297,20 +298,14 @@ async function handleChatCompletion(
   const model = resolved.model
   const canonicalModelId = resolved.canonicalId
 
-  logChatRequest(
-    {
-      requestId,
-      clientRequestId: context.get('clientRequestId'),
-      method: 'POST',
-      path: CHAT_PATH
-    },
-    {
-      requestedModel: request.model,
-      model: canonicalModelId,
-      provider: model.provider,
-      stream: request.stream === true
-    }
-  )
+  // The request and response lines carry no model, so this one ties the call to the model that
+  // served it. Ids only, never message content or credentials.
+  chatLogger.info('Chat request for {requestedModel} resolved to {model}', {
+    requestedModel: request.model,
+    model: canonicalModelId,
+    provider: model.provider,
+    stream: request.stream === true
+  })
 
   const built = buildPiContext(context, model, request)
   if (!built.ok) return built.response

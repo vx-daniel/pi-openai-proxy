@@ -42,7 +42,8 @@ export default defineConfig({
       { name: '@limegrass/import-alias', specifier: '@limegrass/eslint-plugin-import-alias' },
       { name: 'vite-plus', specifier: 'vite-plus/oxlint-plugin' },
       './lint/repo-rules.ts',
-      './lint/naming.ts'
+      './lint/naming.ts',
+      { name: '@logtape', specifier: '@logtape/lint/eslint' }
     ],
     settings: {
       // Names every naming/* rule accepts. `z`: zod's documented `import * as z` convention.
@@ -237,6 +238,10 @@ export default defineConfig({
       'naming/no-single-char-bindings': 'warn',
       'naming/no-single-char-keys': 'error',
       'naming/no-generic-iteration-names': 'warn',
+      '@logtape/no-message-interpolation': 'error',
+      '@logtape/prefer-lazy-evaluation': 'error',
+      '@logtape/no-unawaited-log': 'error',
+      '@logtape/require-meta-sink': 'error',
       'import/namespace': 'error',
 
       // Zod
@@ -387,11 +392,6 @@ export default defineConfig({
           'typescript/no-unnecessary-type-assertion': 'off',
           'typescript/no-unsafe-type-assertion': 'off'
         }
-      },
-      {
-        // The structured logger and the CLI entry write to stderr by design.
-        files: ['src/server/logging.ts', 'src/index.ts'],
-        rules: { 'no-console': 'off' }
       }
     ]
   },
@@ -405,6 +405,7 @@ export default defineConfig({
       'index': 'src/index.ts',
       'config': 'src/config/schema.ts',
       'exposure': 'src/openai/model-exposure.ts',
+      'logging': 'src/logging/index.ts',
       'sync-zed': 'src/sync/zed.ts'
     },
     format: ['esm'],

@@ -8,6 +8,7 @@
  * override it for one-off adjustments or container use.
  */
 
+import { isLogLevel, type LogLevel } from '@logtape/logtape'
 import type { ModelExposureMode, PublicModelIdMode } from '@proxy/config/schema'
 import { BYTES_PER_MB, loadConfigFromFile, MS_PER_SECOND } from '@proxy/config/schema'
 
@@ -34,6 +35,13 @@ export interface ServerConfig {
   readonly customModels: readonly string[]
   /** Provider key -> custom public prefix label. */
   readonly providerPrefixes: Readonly<Record<string, string>>
+  /** Lowest log level written. */
+  readonly logLevel: LogLevel
+}
+
+/** The env var's level when it names a LogTape level; otherwise the file's. */
+function envLogLevel(raw: string | undefined, fallback: LogLevel): LogLevel {
+  return raw !== undefined && isLogLevel(raw) ? raw : fallback
 }
 
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
@@ -50,6 +58,7 @@ export interface CliOverrides {
   remoteImages?: boolean | undefined
   maxBodySizeMb?: number | undefined
   upstreamTimeoutSec?: number | undefined
+  logLevel?: LogLevel | undefined
 }
 
 /**
@@ -96,6 +105,7 @@ export function loadConfig(cli: CliOverrides = {}): ServerConfig {
     publicModelIdMode: file.publicModelIdMode,
     modelExposureMode: file.modelExposureMode,
     customModels: file.customModels,
-    providerPrefixes: file.providerPrefixes
+    providerPrefixes: file.providerPrefixes,
+    logLevel: cli.logLevel ?? envLogLevel(process.env.PI_PROXY_LOG_LEVEL, file.logLevel)
   }
 }

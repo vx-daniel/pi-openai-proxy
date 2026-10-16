@@ -9,6 +9,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
+import { isLogLevel, type LogLevel } from '@logtape/logtape'
 import { isRecord } from '@proxy/utils/guards'
 import * as z from 'zod'
 
@@ -59,6 +60,8 @@ export interface ProxyConfig {
   readonly customModels: readonly string[]
   /** Provider key -> custom public prefix label. Default prefix = provider key. */
   readonly providerPrefixes: Readonly<Record<string, string>>
+  /** Lowest log level the proxy writes (LogTape levels). Default: "info" */
+  readonly logLevel: LogLevel
   /** Zed editor sync settings. */
   readonly zed: ZedSyncConfig
 }
@@ -98,6 +101,7 @@ export const DEFAULT_CONFIG: Readonly<ProxyConfig> = {
   modelExposureMode: 'scoped',
   customModels: [],
   providerPrefixes: {},
+  logLevel: 'info',
   zed: {
     providerName: 'Pi Proxy',
     autoSync: false
@@ -158,6 +162,7 @@ export function normalizeConfig(raw: unknown): ProxyConfig {
   const rawRemoteImages = configObject['remoteImages']
   const rawPublicIdMode = configObject['publicModelIdMode']
   const rawExposureMode = configObject['modelExposureMode']
+  const rawLogLevel = configObject['logLevel']
   return {
     host: typeof rawHost === 'string' && rawHost.length > 0 ? rawHost : DEFAULT_CONFIG.host,
     port: clampInt(configObject['port'], 1, MAX_PORT, DEFAULT_CONFIG.port),
@@ -187,6 +192,10 @@ export function normalizeConfig(raw: unknown): ProxyConfig {
         : DEFAULT_CONFIG.modelExposureMode,
     customModels: normalizeStringArray(configObject['customModels']),
     providerPrefixes: normalizeStringRecord(configObject['providerPrefixes']),
+    logLevel:
+      typeof rawLogLevel === 'string' && isLogLevel(rawLogLevel)
+        ? rawLogLevel
+        : DEFAULT_CONFIG.logLevel,
     zed: parseZedSyncConfig(configObject['zed'])
   }
 }
@@ -249,6 +258,7 @@ export function configToEnv(config: ProxyConfig): Record<string, string> {
   env['PI_PROXY_REMOTE_IMAGES'] = String(config.remoteImages)
   env['PI_PROXY_MAX_BODY_SIZE'] = String(config.maxBodySizeMb * BYTES_PER_MB)
   env['PI_PROXY_UPSTREAM_TIMEOUT_MS'] = String(config.upstreamTimeoutSec * MS_PER_SECOND)
+  env['PI_PROXY_LOG_LEVEL'] = config.logLevel
   // Model exposure settings are read from the shared JSON config file at startup.
   // They are not passed as env vars because the proxy loads the config file directly.
   return env

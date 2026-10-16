@@ -32,6 +32,7 @@ import {
   loadConfigFromFile,
   saveConfigToFile
 } from '@vx-daniel/pi-openai-proxy/config'
+import { configureFileLogging } from '@vx-daniel/pi-openai-proxy/logging'
 
 import {
   refreshStatus,
@@ -104,6 +105,13 @@ async function openSettingsPanelIfInteractive(
 }
 
 export default function proxyExtension(pi: ExtensionAPI): void {
+  // Opt-in logging: the extension writes nothing unless PI_PROXY_EXTENSION_LOG_FILE names a file,
+  // because console output would corrupt pi's terminal UI.
+  const logFile = process.env.PI_PROXY_EXTENSION_LOG_FILE
+  if (logFile !== undefined && logFile.length > 0) {
+    configureFileLogging(logFile, loadConfigFromFile().logLevel)
+  }
+
   // This file lives at <package root>/extensions/proxy/index.ts.
   const extensionDir = dirname(fileURLToPath(import.meta.url))
   const state = createProxyState(resolve(extensionDir, '..', '..'))
