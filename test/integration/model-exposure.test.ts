@@ -1,233 +1,120 @@
 /**
- * Integration tests for model exposure configurations through HTTP routes.
- *
- * Tests different publicModelIdMode and modelExposureMode values
- * against the actual HTTP endpoints. No API credentials needed.
+ * Model exposure configurations through the HTTP routes, against fixture providers `alpha`
+ * (`a1`, `a2`) and `beta` (`b1`), whose model IDs do not collide. Each mode's exact public ID list
+ * is known, so each test asserts the list itself.
  */
 
 import type { ServerConfig } from '@proxy/config/env'
-import { getAvailableModels, initRegistry } from '@proxy/pi/registry'
-import { isRecord } from '@proxy/utils/guards'
-import { beforeAll, describe, expect, test } from 'vite-plus/test'
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vite-plus/test'
 
-import { isErrorBody, isModelListBody, jsonBody, testApp, testConfig } from '../helpers'
+import { type FixtureAgentDir, loadFixtureAgentDir } from '../fixtures/agent-dir'
+import { isErrorBody, isModelListBody, jsonBody, present, testApp, testConfig } from '../helpers'
 
-beforeAll(async () => {
-  await initRegistry()
-})
-
-function appWith(overrides: Partial<ServerConfig>): ReturnType<typeof testApp> {
-  return testApp({ ...testConfig(), ...overrides })
+function fixtureProvider(...modelIds: string[]): Record<string, unknown> {
+  return {
+    baseUrl: 'http://127.0.0.1:9/v1',
+    api: 'openai-completions',
+    apiKey: 'notarealsecret-exposure-key',
+    models: modelIds.map((modelId) => ({ id: modelId }))
+  }
 }
 
-// ---------------------------------------------------------------------------
-// Public ID modes through HTTP
-// ---------------------------------------------------------------------------
+let agentDir: FixtureAgentDir
+
+beforeAll(async () => {
+  agentDir = await loadFixtureAgentDir({
+    modelsJson: { providers: { alpha: fixtureProvider('a1', 'a2'), beta: fixtureProvider('b1') } }
+  })
+})
+
+afterAll(() => {
+  vi.unstubAllEnvs()
+  agentDir.remove()
+})
+
+/** The public model IDs `GET /v1/models` lists under this config, sorted. */
+async function listedIds(overrides: Partial<ServerConfig>): Promise<string[]> {
+  const response = await testApp({ ...testConfig(), ...overrides }).request('/v1/models')
+  expect(response.status).toBe(200)
+  const body = await jsonBody(response)
+  expect(isModelListBody(body)).toBe(true)
+  return (isModelListBody(body) ? body.data : []).map((model) => model.id).toSorted()
+}
 
 describe('publicModelIdMode through HTTP', () => {
-  test('always-prefixed mode returns prefixed IDs in model list', async () => {
-    const models = getAvailableModels()
-    if (models.length === 0) return
-
-    const app = appWith({ publicModelIdMode: 'always-prefixed' })
-    const response = await app.request('/v1/models')
-    expect(response.status).toBe(200)
-
-    const body = await jsonBody(response)
-    expect(isModelListBody(body)).toBe(true)
-    if (!isModelListBody(body)) return
-
-    expect(body.data.length).toBeGreaterThan(0)
-
-    for (const model of body.data) {
-      expect(model.id).toContain('/')
-    }
+  test('always-prefixed lists every model as provider/model', async () => {
+    expect(await listedIds({ publicModelIdMode: 'always-prefixed' })).toEqual([
+      'alpha/a1',
+      'alpha/a2',
+      'beta/b1'
+    ])
   })
 
-  test('collision-prefixed mode returns unprefixed IDs when no collisions', async () => {
-    const models = getAvailableModels()
-    if (models.length === 0) return
-
-    const app = appWith({ publicModelIdMode: 'collision-prefixed' })
-    const response = await app.request('/v1/models')
-    expect(response.status).toBe(200)
-
-    const body = await jsonBody(response)
-    expect(isModelListBody(body)).toBe(true)
-    if (!isModelListBody(body)) return
-
-    if (body.data.length === 0) return
-
-    const idCounts = new Map<string, number>()
-    for (const model of models) {
-      idCounts.set(model.id, (idCounts.get(model.id) ?? 0) + 1)
-    }
-    const hasCollisions = [...idCounts.values()].some((occurrences) => occurrences > 1)
-
-    const unprefixedModels = hasCollisions ? [] : body.data
-    for (const model of unprefixedModels) {
-      expect(model.id).toBeTypeOf('string')
-    }
+  // Catches a prefix applied where no model ID collides.
+  test('collision-prefixed lists bare IDs when nothing collides', async () => {
+    expect(await listedIds({ publicModelIdMode: 'collision-prefixed' })).toEqual(['a1', 'a2', 'b1'])
   })
 })
-
-// ---------------------------------------------------------------------------
-// Exposure modes through HTTP
-// ---------------------------------------------------------------------------
 
 describe('modelExposureMode through HTTP', () => {
-  test('custom mode exposes only selected models', async () => {
-    const models = getAvailableModels()
-    if (models.length < 2) return
-
-    const first = models[0]
-    if (first === undefined) return
-    const canonicalId = `${first.provider}/${first.id}`
-
-    const app = appWith({
-      modelExposureMode: 'custom',
-      customModels: [canonicalId]
-    })
-    const response = await app.request('/v1/models')
-    expect(response.status).toBe(200)
-
-    const body = await jsonBody(response)
-    expect(isModelListBody(body)).toBe(true)
-    if (!isModelListBody(body)) return
-
-    expect(body.data.length).toBe(1)
+  // Catches the custom allowlist being ignored, or matched on anything but the canonical ID.
+  test('custom exposes only the listed canonical IDs', async () => {
+    expect(
+      await listedIds({ modelExposureMode: 'custom', customModels: ['alpha/a1', 'beta/b1'] })
+    ).toEqual(['a1', 'b1'])
   })
 
-  test('custom mode with empty list exposes all available models', async () => {
-    const available = getAvailableModels()
-    if (available.length === 0) return
-
-    const app = appWith({
-      modelExposureMode: 'custom',
-      customModels: []
-    })
-    const response = await app.request('/v1/models')
-    expect(response.status).toBe(200)
-
-    const body = await jsonBody(response)
-    expect(isModelListBody(body)).toBe(true)
-    if (!isModelListBody(body)) return
-
-    expect(body.data.length).toBe(available.length)
+  test('custom with an empty list exposes every available model', async () => {
+    expect(await listedIds({ modelExposureMode: 'custom', customModels: [] })).toEqual([
+      'a1',
+      'a2',
+      'b1'
+    ])
   })
 
-  test('all mode exposes same count as scoped with no filter', async () => {
-    const available = getAvailableModels()
-    if (available.length === 0) return
-
-    const scopedApp = appWith({ modelExposureMode: 'scoped' })
-    const allApp = appWith({ modelExposureMode: 'all' })
-
-    const scopedRes = await scopedApp.request('/v1/models')
-    const allRes = await allApp.request('/v1/models')
-
-    const scopedBody = await jsonBody(scopedRes)
-    const allBody = await jsonBody(allRes)
-
-    expect(isModelListBody(scopedBody)).toBe(true)
-    expect(isModelListBody(allBody)).toBe(true)
-    if (!isModelListBody(scopedBody) || !isModelListBody(allBody)) return
-
-    expect(allBody.data.length).toBe(scopedBody.data.length)
+  test('all exposes every available model', async () => {
+    expect(await listedIds({ modelExposureMode: 'all' })).toEqual(['a1', 'a2', 'b1'])
   })
 })
-
-// ---------------------------------------------------------------------------
-// Provider prefix overrides through HTTP
-// ---------------------------------------------------------------------------
 
 describe('providerPrefixes through HTTP', () => {
-  test('always-prefixed mode uses custom prefix labels', async () => {
-    const models = getAvailableModels()
-    if (models.length === 0) return
-
-    const first = models[0]
-    if (first === undefined) return
-
-    const app = appWith({
-      publicModelIdMode: 'always-prefixed',
-      providerPrefixes: { [first.provider]: 'custom' }
-    })
-    const response = await app.request('/v1/models')
-    expect(response.status).toBe(200)
-
-    const body = await jsonBody(response)
-    expect(isModelListBody(body)).toBe(true)
-    if (!isModelListBody(body)) return
-
-    const prefixedModel = body.data.find((model) => model.id.startsWith('custom/'))
-    expect(prefixedModel).toBeDefined()
+  // Catches a prefix override applied to the wrong provider, or not at all.
+  test('always-prefixed uses the custom label for that provider only', async () => {
+    expect(
+      await listedIds({
+        publicModelIdMode: 'always-prefixed',
+        providerPrefixes: { alpha: 'custom' }
+      })
+    ).toEqual(['beta/b1', 'custom/a1', 'custom/a2'])
   })
 })
 
-// ---------------------------------------------------------------------------
-// Model resolution with different configs
-// ---------------------------------------------------------------------------
-
 describe('model resolution with exposure configs', () => {
-  test('hidden model returns 404 on chat completions', async () => {
-    const models = getAvailableModels()
-    if (models.length < 2) return
-
-    const first = models[0]
-    const second = models[1]
-    if (first === undefined || second === undefined) return
-
-    const app = appWith({
+  // Catches a hidden model still reachable by its canonical ID.
+  test('a model outside the custom allowlist is a 404 on chat completions', async () => {
+    const app = testApp({
+      ...testConfig(),
       modelExposureMode: 'custom',
-      customModels: [`${first.provider}/${first.id}`]
+      customModels: ['alpha/a1']
     })
-
     const response = await app.request('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: `${second.provider}/${second.id}`,
-        messages: [{ role: 'user', content: 'Hello' }]
-      })
+      body: JSON.stringify({ model: 'beta/b1', messages: [{ role: 'user', content: 'Hello' }] })
     })
-    expect(response.status).toBe(404)
-
     const body = await jsonBody(response)
-    expect(isErrorBody(body)).toBe(true)
-    if (!isErrorBody(body)) return
 
-    expect(body.error.code).toBe('model_not_found')
+    expect(response.status).toBe(404)
+    expect(present(isErrorBody(body) ? body.error : undefined, 'an error body').code).toBe(
+      'model_not_found'
+    )
   })
 
-  test('exposed model resolves by public ID in always-prefixed mode', async () => {
-    const models = getAvailableModels()
-    if (models.length === 0) return
+  test('an always-prefixed public ID resolves on the detail route', async () => {
+    const app = testApp({ ...testConfig(), publicModelIdMode: 'always-prefixed' })
+    const response = await app.request(`/v1/models/${encodeURIComponent('alpha/a1')}`)
 
-    const first = models[0]
-    if (first === undefined) return
-
-    const app = appWith({ publicModelIdMode: 'always-prefixed' })
-
-    const listRes = await app.request('/v1/models')
-    const listBody = await jsonBody(listRes)
-    expect(isModelListBody(listBody)).toBe(true)
-    if (!isModelListBody(listBody)) return
-
-    if (listBody.data.length === 0) return
-
-    const firstModel = listBody.data[0]
-    if (firstModel === undefined) return
-    const publicId = firstModel.id
-    const encodedId = encodeURIComponent(publicId)
-
-    const response = await app.request(`/v1/models/${encodedId}`)
     expect(response.status).toBe(200)
-
-    const body = await jsonBody(response)
-    expect(isRecord(body)).toBe(true)
-    if (!isRecord(body)) return
-
-    expect(body['id']).toBe(publicId)
+    expect(await jsonBody(response)).toMatchObject({ id: 'alpha/a1', owned_by: 'alpha' })
   })
 })

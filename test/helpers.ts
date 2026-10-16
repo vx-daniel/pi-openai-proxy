@@ -119,3 +119,12 @@ export function testApp(config?: ServerConfig): ReturnType<typeof createApp> {
   })
   return createApp(serverConfig, reader)
 }
+
+/**
+ * `value`, or a failed test when it is missing. Use instead of `if (value === undefined) return`,
+ * which passes a test that checked nothing.
+ */
+export function present<T>(value: T | undefined, what: string): T {
+  if (value === undefined) throw new Error(`expected ${what}, got nothing`)
+  return value
+}

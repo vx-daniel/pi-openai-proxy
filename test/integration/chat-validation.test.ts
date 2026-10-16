@@ -1,20 +1,38 @@
 /**
- * Integration tests for POST /v1/chat/completions validation.
- *
- * These tests validate request parsing, validation, and error responses
- * without requiring actual API credentials.
+ * Integration tests for POST /v1/chat/completions validation: request parsing, validation and
+ * error responses. Requests that need a model to resolve use a fixture provider (literal key,
+ * unreachable base URL) and are rejected before any upstream call.
  */
 
-import { getAvailableModels, initRegistry } from '@proxy/pi/registry'
-import { beforeAll, describe, expect, test } from 'vite-plus/test'
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vite-plus/test'
 
+import { type FixtureAgentDir, loadFixtureAgentDir } from '../fixtures/agent-dir'
 import { isErrorBody, isErrorLike, jsonBody, testApp, testConfig } from '../helpers'
 
+const FIXTURE_MODEL = 'validation-fixture/model'
+
 let app: ReturnType<typeof testApp>
+let agentDir: FixtureAgentDir
 
 beforeAll(async () => {
-  await initRegistry()
+  agentDir = await loadFixtureAgentDir({
+    modelsJson: {
+      providers: {
+        'validation-fixture': {
+          baseUrl: 'http://127.0.0.1:9/v1',
+          api: 'openai-completions',
+          apiKey: 'notarealsecret-validation-key',
+          models: [{ id: 'model' }]
+        }
+      }
+    }
+  })
   app = testApp()
+})
+
+afterAll(() => {
+  vi.unstubAllEnvs()
+  agentDir.remove()
 })
 
 describe('POST /v1/chat/completions - validation', () => {
@@ -81,18 +99,11 @@ describe('POST /v1/chat/completions - validation', () => {
   })
 
   test('rejects unsupported tool schemas with 422', async () => {
-    const models = getAvailableModels()
-    if (models.length === 0) return
-
-    const first = models[0]
-    if (first === undefined) return
-    const canonicalId = `${first.provider}/${first.id}`
-
     const response = await app.request('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: canonicalId,
+        model: FIXTURE_MODEL,
         messages: [{ role: 'user', content: 'Hello' }],
         tools: [
           {

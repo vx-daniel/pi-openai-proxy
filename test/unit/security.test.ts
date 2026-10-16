@@ -1,141 +1,95 @@
 /**
- * Security tests for image URL handling.
+ * Security tests for image URL handling: remote URLs are blocked, oversized payloads are rejected,
+ * and only supported MIME types are accepted.
  *
- * Validates that remote image URLs are blocked, oversized payloads are
- * rejected, and only supported MIME types are accepted.
- * No credentials needed.
+ * The model is a fixture provider (literal key, unreachable base URL): every request here is
+ * rejected before any upstream call, so nothing leaves the machine and no login is needed.
  */
 
-import { getAvailableModels, initRegistry } from '@proxy/pi/registry'
-import { beforeAll, describe, expect, test } from 'vite-plus/test'
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vite-plus/test'
 
+import { type FixtureAgentDir, loadFixtureAgentDir } from '../fixtures/agent-dir'
 import { isErrorLike, jsonBody, testApp } from '../helpers'
 
-let app: ReturnType<typeof testApp>
-let modelId: string | undefined
+const MODEL_ID = 'security-fixture/vision-model'
+/** One byte over the 20 MB limit on a decoded image. */
+const OVERSIZED_BASE64 = 'A'.repeat(21 * 1024 * 1024)
+
+let agentDir: FixtureAgentDir
 
 beforeAll(async () => {
-  await initRegistry()
-  app = testApp()
-  const models = getAvailableModels()
-  const first = models[0]
-  if (first !== undefined) {
-    modelId = `${first.provider}/${first.id}`
-  }
+  agentDir = await loadFixtureAgentDir({
+    modelsJson: {
+      providers: {
+        'security-fixture': {
+          baseUrl: 'http://127.0.0.1:9/v1',
+          api: 'openai-completions',
+          apiKey: 'notarealsecret-security-key',
+          models: [{ id: 'vision-model', input: ['text', 'image'] }]
+        }
+      }
+    }
+  })
 })
 
-function chatRequestWithImage(imageUrl: string): string {
-  return JSON.stringify({
-    model: modelId ?? 'unavailable/model',
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: 'What is this?' },
-          { type: 'image_url', image_url: { url: imageUrl } }
-        ]
-      }
-    ]
+afterAll(() => {
+  vi.unstubAllEnvs()
+  agentDir.remove()
+})
+
+async function sendImage(imageUrl: string): Promise<Response> {
+  return testApp().request('/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: MODEL_ID,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'What is this?' },
+            { type: 'image_url', image_url: { url: imageUrl } }
+          ]
+        }
+      ]
+    })
   })
 }
 
 describe('image URL security', () => {
-  test('rejects remote HTTP URL', async () => {
-    if (modelId === undefined) return
-    const response = await app.request('/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: chatRequestWithImage('http://example.com/image.png')
-    })
-    expect(response.status).toBe(400)
+  // Catches an image the proxy must not fetch or forward getting through: a remote URL (which the
+  // proxy would have to fetch, server-side), a payload over the size limit, a type the providers do
+  // not take, or a malformed data URI.
+  test.each([
+    ['a remote HTTP URL', 'http://example.com/image.png', 'Remote image URLs are not supported'],
+    ['a remote HTTPS URL', 'https://example.com/image.png', 'Remote image URLs are not supported'],
+    ['a localhost URL', 'http://localhost:8080/image.png', 'Remote image URLs are not supported'],
+    ['a private-range URL', 'http://192.168.1.1/image.png', 'Remote image URLs are not supported'],
+    [
+      'an oversized base64 payload',
+      `data:image/png;base64,${OVERSIZED_BASE64}`,
+      'exceeds maximum size'
+    ],
+    [
+      'an unsupported MIME type',
+      'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+      'Unsupported image MIME type'
+    ],
+    ['a malformed data URI', 'data:not-valid', 'Invalid base64 data URI']
+  ])('rejects %s with 400', async (_case, imageUrl, reason) => {
+    const response = await sendImage(imageUrl)
     const body = await jsonBody(response)
-    expect(isErrorLike(body)).toBe(true)
-    if (!isErrorLike(body)) return
-    expect(body.error.message).toContain('Remote image URLs are not supported')
+
+    expect(response.status).toBe(400)
+    expect(isErrorLike(body) ? body.error.message : body).toEqual(expect.stringContaining(reason))
   })
 
-  test('rejects remote HTTPS URL', async () => {
-    if (modelId === undefined) return
-    const response = await app.request('/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: chatRequestWithImage('https://example.com/photo.jpg')
-    })
-    expect(response.status).toBe(400)
-    const body = await jsonBody(response)
-    expect(isErrorLike(body)).toBe(true)
-    if (!isErrorLike(body)) return
-    expect(body.error.message).toContain('Remote image URLs are not supported')
-  })
+  // Catches the cases above passing because the model, not the image, was refused: the same
+  // request with a valid image gets past image validation to the (unreachable) upstream.
+  test('accepts a valid base64 PNG, so the rejections above are about the image', async () => {
+    const response = await sendImage('data:image/png;base64,iVBORw0KGgo=')
 
-  test('rejects localhost URL', async () => {
-    if (modelId === undefined) return
-    const response = await app.request('/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: chatRequestWithImage('http://localhost:8080/secret.png')
-    })
-    expect(response.status).toBe(400)
-    const body = await jsonBody(response)
-    expect(isErrorLike(body)).toBe(true)
-    if (!isErrorLike(body)) return
-    expect(body.error.message).toContain('Remote image URLs are not supported')
-  })
-
-  test('rejects private-range IP URL', async () => {
-    if (modelId === undefined) return
-    const response = await app.request('/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: chatRequestWithImage('http://192.168.1.1/image.png')
-    })
-    expect(response.status).toBe(400)
-    const body = await jsonBody(response)
-    expect(isErrorLike(body)).toBe(true)
-    if (!isErrorLike(body)) return
-    expect(body.error.message).toContain('Remote image URLs are not supported')
-  })
-
-  test('rejects oversized base64 payload', async () => {
-    if (modelId === undefined) return
-    const oversizedData = 'A'.repeat(21 * 1024 * 1024)
-    const response = await app.request('/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: chatRequestWithImage(`data:image/png;base64,${oversizedData}`)
-    })
-    expect(response.status).toBe(400)
-    const body = await jsonBody(response)
-    expect(isErrorLike(body)).toBe(true)
-    if (!isErrorLike(body)) return
-    expect(body.error.message).toContain('exceeds maximum size')
-  })
-
-  test('rejects unsupported MIME type', async () => {
-    if (modelId === undefined) return
-    const response = await app.request('/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: chatRequestWithImage('data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=')
-    })
-    expect(response.status).toBe(400)
-    const body = await jsonBody(response)
-    expect(isErrorLike(body)).toBe(true)
-    if (!isErrorLike(body)) return
-    expect(body.error.message).toContain('Unsupported image MIME type')
-  })
-
-  test('rejects invalid data URI format', async () => {
-    if (modelId === undefined) return
-    const response = await app.request('/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: chatRequestWithImage('data:not-valid')
-    })
-    expect(response.status).toBe(400)
-    const body = await jsonBody(response)
-    expect(isErrorLike(body)).toBe(true)
-    if (!isErrorLike(body)) return
-    expect(body.error.message).toContain('Invalid base64 data URI')
+    expect(response.status).not.toBe(400)
+    expect(response.status).not.toBe(404)
   })
 })
