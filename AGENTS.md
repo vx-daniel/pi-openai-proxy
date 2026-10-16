@@ -74,12 +74,13 @@ pnpm run check:all  # the gate: format → lint + type check → tests → build
 vp check --fix      # apply formatting and lint fixes
 vp test             # offline tests: unit + integration, no real login (same as test:ci)
 pnpm run test:live  # live provider conformance tests: real login, spends quota; on demand only
+pnpm run test:live:record  # re-record replay fixtures (PI_PROXY_RECORD_AGENT_DIR = a login made for recording)
 vp pack             # build
 ```
 
 `scripts/gate.ts` is the single definition of "green": the pre-commit hook, CI (`.github/workflows/ci.yml`) and the release workflow all run `check:all`. Add a check there, not in a hook or a workflow.
 
-Offline tests never read the developer's pi login or provider credentials: `test/setup/offline.ts` points pi at an empty agent dir and removes credential env vars. A test that needs models or an upstream uses `loadFixtureAgentDir` (`test/fixtures/agent-dir.ts`) and `startMockProvider` (`test/fixtures/mock-provider.ts`). Never test against a copy of a live login: resolving an expired OAuth credential refreshes it and rotates the refresh token under every other copy.
+Offline tests never read the developer's pi login or provider credentials: `test/setup/offline.ts` points pi at an empty agent dir and removes credential env vars. A test that needs models or an upstream uses `loadFixtureAgentDir` (`test/fixtures/agent-dir.ts`) and `startMockProvider` (`test/fixtures/mock-provider.ts`), with scripted replies or `replay(loadRecording(...))` of recorded real traffic (`test/fixtures/recording.ts`). Never test or record against a copy of a live login: resolving an expired OAuth credential refreshes it and rotates the refresh token under every other copy.
 
 Expected discipline in this repo:
 
