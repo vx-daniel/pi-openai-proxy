@@ -11,11 +11,10 @@ import { type CliOverrides, loadConfig, type ServerConfig } from '@proxy/config/
 import { getConfigPath, loadConfigFromFile } from '@proxy/config/schema'
 import {
   configureLogging,
-  defaultLogFormat,
   isLogFormat,
   LOG_FORMATS,
-  type LogFormat,
-  proxyLogger
+  proxyLogger,
+  resolveLogFormat
 } from '@proxy/logging'
 import { getAvailableModels, initRegistry } from '@proxy/pi/registry'
 import { createApp } from '@proxy/server/app'
@@ -64,16 +63,6 @@ function invalidLoggingFlag(args: CliArgs): string | undefined {
   return undefined
 }
 
-/** `--log-format`, then a valid `PI_PROXY_LOG_FORMAT`, then pretty on a terminal and JSON otherwise. */
-function resolveLogFormat(cliFormat: string | undefined): LogFormat {
-  const envFormat = process.env.PI_PROXY_LOG_FORMAT
-  return (
-    [cliFormat, envFormat].find(
-      (candidate): candidate is LogFormat => candidate !== undefined && isLogFormat(candidate)
-    ) ?? defaultLogFormat()
-  )
-}
-
 /** Build CLI overrides from parsed args. */
 function buildCliOverrides(args: CliArgs): CliOverrides {
   const cli: CliOverrides = {}
@@ -110,7 +99,7 @@ function loadConfigWithLogging(args: CliArgs): ServerConfig | undefined {
     return undefined
   }
 
-  const format = resolveLogFormat(args['log-format'])
+  const format = resolveLogFormat(args['log-format'], process.env.PI_PROXY_LOG_FORMAT)
   const earlyLogLevel =
     [args['log-level'], process.env.PI_PROXY_LOG_LEVEL].find(
       (candidate): candidate is LogLevel => candidate !== undefined && isLogLevel(candidate)

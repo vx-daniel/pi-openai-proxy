@@ -88,6 +88,21 @@ export function defaultLogFormat(): LogFormat {
   return process.stderr.isTTY ? 'pretty' : 'json'
 }
 
+/**
+ * The format to log in: the `--log-format` flag, then `PI_PROXY_LOG_FORMAT`, then
+ * `defaultLogFormat()`. A value that names no format is skipped; the caller reports it.
+ */
+export function resolveLogFormat(
+  flagFormat: string | undefined,
+  envFormat: string | undefined,
+  fallback: () => LogFormat = defaultLogFormat
+): LogFormat {
+  const chosen = [flagFormat, envFormat].find(
+    (candidate): candidate is LogFormat => candidate !== undefined && isLogFormat(candidate)
+  )
+  return chosen ?? fallback()
+}
+
 function formatterFor(format: LogFormat): TextFormatter {
   // JSON keeps LogTape's UTC `@timestamp`: unambiguous for anything that parses or ships logs.
   if (format === 'json') return jsonLinesFormatter
