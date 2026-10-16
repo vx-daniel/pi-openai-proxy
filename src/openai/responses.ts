@@ -19,6 +19,10 @@ export interface OpenAIUsage {
 	readonly prompt_tokens: number;
 	readonly completion_tokens: number;
 	readonly total_tokens: number;
+	readonly prompt_tokens_details: {
+		readonly cached_tokens: number;
+		readonly cache_write_tokens: number;
+	};
 }
 
 export interface OpenAIChatCompletion {
@@ -55,13 +59,22 @@ export interface OpenAIToolCall {
 	};
 }
 
-/** Pi StopReason -> OpenAI finish_reason */
+/**
+ * Pi StopReason -> OpenAI finish_reason.
+ *
+ * `pending` is a response still in flight and `deferred` one the provider continues
+ * asynchronously; Pi only returns `deferred` when the caller sets `deferred` in the request
+ * options, which this proxy never does, so neither reaches a client. They map like `error` and
+ * `aborted` (a finish_reason is required, and OpenAI has no better fit).
+ */
 const FINISH_REASON_MAP: Record<StopReason, string> = {
+	pending: "stop",
 	stop: "stop",
 	length: "length",
 	toolUse: "tool_calls",
 	error: "stop",
 	aborted: "stop",
+	deferred: "stop",
 };
 
 /**
@@ -73,12 +86,25 @@ export function mapFinishReason(reason: StopReason): string {
 
 /**
  * Map pi Usage to OpenAI usage.
+ *
+ * Pi's `input` is only the uncached input: for Anthropic with prompt caching, cache reads and
+ * writes arrive separately as `cacheRead` and `cacheWrite`. OpenAI clients expect
+ * `prompt_tokens` to be the whole prompt, with the cached part broken out in
+ * `prompt_tokens_details`. Reporting `input` alone made a 9,650-token prompt come back as
+ * `prompt_tokens: 4`, so a client that sizes its context or triggers compaction from it (Docker
+ * Agent does) saw about 0.04% of the real context.
  */
 export function mapUsage(usage: Usage): OpenAIUsage {
+	const cacheReadTokens = usage.cacheRead ?? 0;
+	const cacheWriteTokens = usage.cacheWrite ?? 0;
 	return {
-		prompt_tokens: usage.input,
+		prompt_tokens: usage.input + cacheReadTokens + cacheWriteTokens,
 		completion_tokens: usage.output,
 		total_tokens: usage.totalTokens,
+		prompt_tokens_details: {
+			cached_tokens: cacheReadTokens,
+			cache_write_tokens: cacheWriteTokens,
+		},
 	};
 }
 

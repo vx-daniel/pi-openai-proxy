@@ -324,8 +324,10 @@ The extension detects externally running instances and shows their status via `/
 
 ### Pi SDK layers used
 
-- **`@earendil-works/pi-ai`** — `streamSimple()`, `completeSimple()`, `Model`, `Usage`, `AssistantMessageEvent`
-- **`@earendil-works/pi-coding-agent`** — `ModelRegistry`, `AuthStorage`
+- **`@earendil-works/pi-ai`** — the types `Model`, `Usage`, `AssistantMessageEvent`, `JsonObject`
+- **`@earendil-works/pi-coding-agent`** — `ModelRuntime` (credentials, catalog and request auth; `streamSimple()` and `completeSimple()` run through it) and `SettingsManager`
+
+Requires Pi 1.x (`^1.3.0`). Pi 1.0 is the first release whose Anthropic client identifies as Claude Code 2.1.280, which Anthropic requires for Opus 5.5 and Fable 5.1; Pi 0.x identified as 2.1.75 and those models were refused.
 
 ## Security defaults
 

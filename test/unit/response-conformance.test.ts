@@ -6,7 +6,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { AssistantMessage, TextContent, ToolCall, Usage } from "@earendil-works/pi-ai";
+import type {
+	AssistantMessage,
+	JsonObject,
+	TextContent,
+	ToolCall,
+	Usage,
+} from "@earendil-works/pi-ai";
 import { buildChatCompletion } from "@proxy/openai/responses";
 
 // ---------------------------------------------------------------------------
@@ -44,7 +50,7 @@ function makeTextMessage(
 }
 
 function makeToolCallMessage(
-	calls: { id: string; name: string; args: Record<string, unknown> }[],
+	calls: { id: string; name: string; args: JsonObject }[],
 	overrides: Partial<AssistantMessage> = {},
 ): AssistantMessage {
 	const content: ToolCall[] = calls.map((c) => ({

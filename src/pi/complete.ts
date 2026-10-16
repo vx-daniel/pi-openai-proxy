@@ -13,9 +13,8 @@ import type {
 	SimpleStreamOptions,
 	ThinkingLevel,
 } from "@earendil-works/pi-ai";
-import { completeSimple, streamSimple } from "@earendil-works/pi-ai";
 import type { ChatCompletionRequest, OpenAIFunctionTool } from "@proxy/openai/schemas";
-import { getRequestAuth } from "@proxy/pi/registry";
+import { getRuntime } from "@proxy/pi/registry";
 import { isRecord } from "@proxy/utils/guards";
 
 /**
@@ -529,22 +528,11 @@ async function buildStreamOptions(
 		opts.signal = combinedSignal;
 	}
 
-	// Per-request upstream key takes precedence over registry-resolved key.
-	// When no override is provided, resolve auth per request so Pi can supply
-	// both API keys and dynamic model-specific headers.
+	// A per-request upstream key (X-Pi-Upstream-Api-Key) overrides everything. Without one, leave
+	// apiKey unset: the ModelRuntime resolves request auth itself for the chosen model (API keys,
+	// OAuth with refresh, model-specific headers, dynamic models.json headers).
 	if (options.upstreamApiKey !== undefined) {
 		opts.apiKey = options.upstreamApiKey;
-	} else {
-		const auth = await getRequestAuth(model);
-		if (!auth.ok) {
-			throw new Error(auth.error);
-		}
-		if (auth.apiKey !== undefined) {
-			opts.apiKey = auth.apiKey;
-		}
-		if (auth.headers !== undefined) {
-			opts.headers = auth.headers;
-		}
 	}
 
 	// Inject passthrough fields and tool strict flags via onPayload
@@ -587,7 +575,7 @@ export async function piComplete(
 	options: CompletionOptions,
 ): Promise<AssistantMessage> {
 	const opts = await buildStreamOptions(model, request, options);
-	return completeSimple(model, context, opts);
+	return getRuntime().completeSimple(model, context, opts);
 }
 
 /**
@@ -600,5 +588,5 @@ export async function piStream(
 	options: CompletionOptions,
 ): Promise<AssistantMessageEventStream> {
 	const opts = await buildStreamOptions(model, request, options);
-	return streamSimple(model, context, opts);
+	return getRuntime().streamSimple(model, context, opts);
 }
