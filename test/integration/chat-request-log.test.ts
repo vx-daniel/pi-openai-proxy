@@ -175,6 +175,9 @@ describe('chat request logging', () => {
       body: JSON.stringify({ model: FIXTURE_MODEL, messages: [{ role: 'user', content: 'Hi' }] })
     })
 
+    // A 5xx means the request got past every check and failed at the upstream call itself, so the
+    // key went through every point that logs. A 4xx would mean it stopped early and the assertion
+    // below covered less: fail loudly rather than pass on a shorter path.
     expect(response.status).toBeGreaterThanOrEqual(500)
     expect(logged('pi-openai-proxy.server.http')[0]?.properties).toMatchObject({
       hasUpstreamApiKey: true
