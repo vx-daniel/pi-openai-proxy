@@ -24,18 +24,62 @@ let settingsManager: SettingsManager | undefined
  */
 export type RequestAuthResult = { ok: true } | { ok: false; error: string }
 
+/** pi appends the file's path to every models.json error after this separator. */
+const MODELS_JSON_FILE_SEPARATOR = '\n\nFile: '
+const MODELS_JSON_PARSE_PREFIX = 'Failed to parse models.json:'
+const JSON_ERROR_LINE_COLUMN = /\(line (\d+) column (\d+)\)/
+const JSON_ERROR_OFFSET = /position (\d+)/
+
+/**
+ * pi's models.json error split into its message and the file's path. The last separator is the
+ * one pi appended: a parse snippet before it is file content and could, in principle, contain the
+ * same text.
+ */
+function splitModelsJsonError(error: string): { detail: string; path: string | undefined } {
+  const separator = error.lastIndexOf(MODELS_JSON_FILE_SEPARATOR)
+  return separator === -1
+    ? { detail: error, path: undefined }
+    : {
+        detail: error.slice(0, separator),
+        path: error.slice(separator + MODELS_JSON_FILE_SEPARATOR.length)
+      }
+}
+
+/**
+ * pi's models.json error, reduced to what cannot quote the file. JSON.parse messages can include a
+ * slice of the text around the fault (`Unexpected token 'o', ..."apiKey": notarealsec"... is not
+ * valid JSON`), which is often a key, so a parse error keeps only where it is. Load errors (the
+ * fs message) and schema errors (property paths, which name the user's providers and models, and
+ * TypeBox's fixed messages) quote no values and pass through. The file's path is dropped; callers
+ * that log it take it separately.
+ */
+export function describeModelsJsonError(error: string): string {
+  const { detail } = splitModelsJsonError(error)
+  if (!detail.startsWith(MODELS_JSON_PARSE_PREFIX)) return detail
+  const lineColumn = JSON_ERROR_LINE_COLUMN.exec(detail)
+  if (lineColumn !== null) {
+    return `models.json is not valid JSON at line ${String(lineColumn[1])} column ${String(lineColumn[2])}`
+  }
+  const offset = JSON_ERROR_OFFSET.exec(detail)
+  return offset === null
+    ? 'models.json is not valid JSON'
+    : `models.json is not valid JSON at position ${String(offset[1])}`
+}
+
 /**
  * Initialize the runtime and settings. Call once at startup.
- * Returns the load error if models.json failed to parse, or undefined on success.
+ * Returns the models.json error (`describeModelsJsonError`), or undefined on success.
  */
 export async function initRegistry(): Promise<string | undefined> {
   const cwd = process.cwd()
   runtime = await ModelRuntime.create()
   settingsManager = SettingsManager.create(cwd)
-  const loadError = runtime.getError()
-  if (loadError !== undefined) {
+  const rawError = runtime.getError()
+  const loadError = rawError === undefined ? undefined : describeModelsJsonError(rawError)
+  if (rawError !== undefined) {
     registryLogger.warn('models.json failed to load; using built-in models only: {error}', {
-      error: loadError
+      error: loadError,
+      path: splitModelsJsonError(rawError).path
     })
   }
   registryLogger.info('Model runtime ready with {availableModelCount} available models', {
@@ -183,9 +227,13 @@ export async function getEnabledModels(): Promise<readonly string[] | undefined>
   return enabledModels
 }
 
-/** Why models.json failed to load, or undefined when it loaded (or there is none). */
+/**
+ * Why models.json failed to load, or undefined when it loaded (or there is none). Reduced by
+ * `describeModelsJsonError`, so a response or a log line may carry it.
+ */
 export function getModelsJsonError(): string | undefined {
-  return getRuntime().getError()
+  const error = getRuntime().getError()
+  return error === undefined ? undefined : describeModelsJsonError(error)
 }
 
 /** How one provider is authenticated, for the health endpoint. Never the credential itself. */

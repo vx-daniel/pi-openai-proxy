@@ -107,7 +107,7 @@ Operational endpoints, outside the OpenAI-compatible `/v1` surface:
 | Endpoint | Auth | Answers |
 |---|---|---|
 | `GET /healthz` | Never | `200 {"status":"ok"}` once the proxy listens and pi's model runtime is loaded. No upstream calls: use it for container healthchecks and liveness probes. |
-| `GET /healthz/models` | Proxy token, if set | Available and exposed model counts, exposure modes, a `models.json` load error. `503` when no model is exposed or the exposure config is invalid. |
+| `GET /healthz/models` | Proxy token, if set | Available and exposed model counts, exposure modes, a `models.json` load error (a parse error says only where the file is not valid JSON, never what it says there). `503` when no model is exposed or the exposure config is invalid. |
 | `GET /healthz/creds` | Proxy token, if set | Per provider with a credential: `type` (`oauth` or `api_key`), `source` (`stored`, `environment`, `models_json_key`, …) and `availableModelCount`. `503` when no provider has one. Reads local state only; `?verify=true` also has pi resolve each credential now and adds `verified` and `error` per provider, `503` if any fails. |
 
 None of them returns a credential. `/healthz` proves the process is up, not that a provider will accept a request: `GET /healthz/creds?verify=true` is the closest check to that without spending a completion.
