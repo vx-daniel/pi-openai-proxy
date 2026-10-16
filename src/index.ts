@@ -5,12 +5,13 @@
  * Config priority: CLI args > env vars > JSON config file > defaults.
  */
 
+import { serve } from "@hono/node-server";
+import { defineCommand, runMain } from "citty";
 import { type CliOverrides, loadConfig } from "@proxy/config/env";
 import { getConfigPath, loadConfigFromFile } from "@proxy/config/schema";
 import { getAvailableModels, initRegistry } from "@proxy/pi/registry";
 import { createApp } from "@proxy/server/app";
 import { logShutdown, logStartup } from "@proxy/server/logging";
-import { defineCommand, runMain } from "citty";
 
 const main = defineCommand({
 	meta: {
@@ -110,9 +111,7 @@ const main = defineCommand({
 
 			const SHUTDOWN_TIMEOUT_MS = 10_000;
 
-			if (server !== undefined) {
-				void server.stop();
-			}
+			server.close();
 
 			setTimeout(() => {
 				console.error("[warn] Shutdown timeout reached, forcing exit");
@@ -123,11 +122,10 @@ const main = defineCommand({
 		process.on("SIGTERM", () => handleShutdown("SIGTERM"));
 		process.on("SIGINT", () => handleShutdown("SIGINT"));
 
-		const server = Bun.serve({
+		const server = serve({
+			fetch: app.fetch,
 			port: config.port,
 			hostname: config.host,
-			fetch: app.fetch,
-			idleTimeout: 255,
 		});
 	},
 });

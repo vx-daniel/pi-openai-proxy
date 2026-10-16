@@ -20,10 +20,8 @@
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
-import { constants, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { access } from "node:fs/promises";
-import { homedir } from "node:os";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import {
@@ -41,7 +39,6 @@ import {
 	SettingsList,
 	Text,
 } from "@earendil-works/pi-tui";
-
 // Config schema -- single source of truth
 import {
 	configToEnv,
@@ -52,13 +49,11 @@ import {
 	type PublicModelIdMode,
 	saveConfigToFile,
 } from "@victor-software-house/pi-openai-proxy/config";
-
 // Model-exposure engine
 import {
 	computeModelExposure,
 	type ModelExposureConfig,
 } from "@victor-software-house/pi-openai-proxy/exposure";
-
 import { syncToZed, type ZedSyncOptions } from "@victor-software-house/pi-openai-proxy/sync/zed";
 
 // ---------------------------------------------------------------------------
@@ -141,39 +136,9 @@ export default function proxyExtension(pi: ExtensionAPI): void {
 		return "pi-proxy";
 	}
 
-	async function isExecutable(path: string): Promise<boolean> {
-		try {
-			await access(path, constants.X_OK);
-			return true;
-		} catch {
-			return false;
-		}
-	}
-
-	async function resolveBunExecutable(): Promise<string> {
-		if ("bun" in process.versions) return process.execPath;
-
-		const bunInstall = process.env["BUN_INSTALL"];
-		const pathEntries = (process.env["PATH"] ?? "")
-			.split(delimiter)
-			.filter((entry) => entry.length > 0);
-		const candidates = [
-			process.env["PI_OPENAI_PROXY_BUN"],
-			bunInstall === undefined ? undefined : join(bunInstall, "bin", "bun"),
-			...pathEntries.map((entry) => join(entry, "bun")),
-			join(homedir(), ".bun", "bin", "bun"),
-			join(homedir(), ".local", "share", "mise", "installs", "bun", "latest", "bin", "bun"),
-			"/opt/homebrew/bin/bun",
-			"/usr/local/bin/bun",
-		];
-
-		for (const candidate of candidates) {
-			if (candidate !== undefined && (await isExecutable(candidate))) return candidate;
-		}
-
-		throw new Error(
-			"Bun runtime not found. Install Bun or set PI_OPENAI_PROXY_BUN to the Bun executable path.",
-		);
+	// A built entry runs on the runtime hosting pi (Node); anything else is an executable on PATH.
+	function proxyCommand(bin: string): { cmd: string; args: string[] } {
+		return bin.endsWith(".mjs") ? { cmd: process.execPath, args: [bin] } : { cmd: bin, args: [] };
 	}
 
 	function proxyUrl(): string {
@@ -392,9 +357,9 @@ export default function proxyExtension(pi: ExtensionAPI): void {
 			const bin = findProxyBinary();
 
 			if (config.lifetime === "detached") {
-				await startDetached(bin, proxyEnv);
+				startDetached(bin, proxyEnv);
 			} else {
-				await startSessionTied(ctx, bin, proxyEnv);
+				startSessionTied(ctx, bin, proxyEnv);
 			}
 
 			const ready = await waitForReady(3000);
@@ -415,12 +380,10 @@ export default function proxyExtension(pi: ExtensionAPI): void {
 		}
 	}
 
-	async function startDetached(bin: string, env: Record<string, string>): Promise<void> {
-		const usesBun = bin.endsWith(".mjs");
-		const cmd = usesBun ? await resolveBunExecutable() : bin;
-		const cmdArgs = usesBun ? ["run", bin] : [];
+	function startDetached(bin: string, env: Record<string, string>): void {
+		const { cmd, args } = proxyCommand(bin);
 
-		const child = spawn(cmd, cmdArgs, {
+		const child = spawn(cmd, args, {
 			stdio: ["ignore", "ignore", "ignore"],
 			detached: true,
 			env: { ...process.env, ...env },
@@ -438,21 +401,15 @@ export default function proxyExtension(pi: ExtensionAPI): void {
 		writePid(child.pid);
 	}
 
-	async function startSessionTied(
-		ctx: ExtensionContext,
-		bin: string,
-		env: Record<string, string>,
-	): Promise<void> {
+	function startSessionTied(ctx: ExtensionContext, bin: string, env: Record<string, string>): void {
 		if (sessionProcess !== undefined) {
 			ctx.ui.notify("Session proxy already running", "info");
 			return;
 		}
 
-		const usesBun = bin.endsWith(".mjs");
-		const cmd = usesBun ? await resolveBunExecutable() : bin;
-		const cmdArgs = usesBun ? ["run", bin] : [];
+		const { cmd, args } = proxyCommand(bin);
 
-		sessionProcess = spawn(cmd, cmdArgs, {
+		sessionProcess = spawn(cmd, args, {
 			stdio: ["ignore", "pipe", "pipe"],
 			detached: false,
 			env: { ...process.env, ...env },
@@ -1136,7 +1093,7 @@ export default function proxyExtension(pi: ExtensionAPI): void {
 	async function openSettingsPanel(ctx: ExtensionCommandContext): Promise<void> {
 		config = loadConfigFromFile();
 
-		await ctx.ui.custom<void>(
+		await ctx.ui.custom<undefined>(
 			(tui, theme, _kb, done) => {
 				const container = new Container();
 				container.addChild(new Text(theme.fg("accent", theme.bold("Proxy Settings")), 1, 0));
@@ -1190,7 +1147,7 @@ export default function proxyExtension(pi: ExtensionAPI): void {
 						container.invalidate();
 					},
 					handleInput(data: string): void {
-						settingsList.handleInput?.(data);
+						settingsList.handleInput(data);
 						tui.requestRender();
 					},
 				};
