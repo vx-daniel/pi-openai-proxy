@@ -12,7 +12,7 @@ Before changing code:
 
 1. Read [`PLAN.md`](PLAN.md) for architecture, API compatibility policy, and security boundaries.
 2. Skim [`README.md`](README.md) for public contract and operator-facing behavior.
-3. Check `package.json`, `lefthook.yml`, `biome.json`, `.oxlintrc.json`, and `tsconfig.json` before changing tooling.
+3. Check `package.json`, `vite.config.ts` (fmt, lint, test, pack, staged), `lint/repo-rules.ts`, `.vite-hooks/`, and `tsconfig.json` before changing tooling.
 4. Use recent git history when behavior or workflow intent is unclear: `git log --oneline -20`.
 
 ## Repo shape
@@ -46,7 +46,8 @@ For detailed rationale and edge cases, defer to [`PLAN.md`](PLAN.md) instead of 
 
 ## Coding rules that matter in this repo
 
-- Runtime/tooling: **pnpm package management + Bun runtime scripts + TypeScript + Hono + Zod v4 + TypeBox**.
+- Runtime/tooling: **Node runtime + Vite+ toolchain (`vp`: Oxfmt, Oxlint/tsgolint, Vitest, tsdown) + pnpm + TypeScript + Hono + Zod v4 + TypeBox**.
+- Tests import from `vite-plus/test`, not `vitest` or `bun:test`.
 - Use import alias `@proxy/*` for `src/*`. Do **not** introduce relative imports across the source tree.
 - Use `import type` where required.
 - Use `node:` protocol for Node built-ins.
@@ -65,25 +66,25 @@ When you change code, run the smallest relevant checks first, then expand as nee
 Common commands:
 
 ```bash
-pnpm run typecheck
-pnpm run lint
-pnpm test
-pnpm run build
+vp check          # format check + lint + type check
+vp check --fix    # apply formatting and lint fixes
+vp test           # all tests (conformance needs provider credentials)
+vp run test:ci    # unit + integration
+vp pack           # build
 ```
 
 Expected discipline in this repo:
 
-- Before committing, run **lint + tests**.
-- If types were affected, run `pnpm run typecheck` too.
-- If packaging/runtime entrypoints changed, run `pnpm run build`.
+- Before committing, run **`vp check` + tests**.
+- If packaging/runtime entrypoints changed, run `vp pack`.
 - If only docs changed, skip code checks unless the change affects documented commands or behavior.
 - In your summary, state exactly what you ran and what you did **not** run.
 
-Hook-backed workflow already exists and should be preserved:
+Hook-backed workflow already exists (`.vite-hooks/`, installed by `vp config` on `prepare`) and should be preserved:
 
 - `commit-msg` -> commitlint
-- `pre-commit` -> format, lint, typecheck
-- `pre-push` -> lockfile sync check, typecheck, lint, `pnpm run test:ci`
+- `pre-commit` -> `vp staged` (`vp check --fix` on staged files)
+- `pre-push` -> lockfile sync check, `vp check`, `vp run test:ci`
 
 Do not weaken these hooks unless the user asks.
 

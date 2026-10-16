@@ -114,6 +114,7 @@ Research-backed decisions on deferred compatibility and resilience items. Analys
 ## Fork maintenance [DONE]
 
 - [x] Add a `chat_request` log line naming the requested and the resolved model of each chat request
+- [x] Consolidate tooling on Vite+ (Oxfmt, Oxlint + tsgolint, Vitest, tsdown, `vp` hooks) and run on Node instead of Bun
 
 ## Phase 4 — Monorepo and proper CLI
 
@@ -158,9 +159,9 @@ CLI args > env vars > JSON config file (`~/.pi/agent/proxy-config.json`) > defau
 
 ### Workspace setup
 
-- [ ] pnpm workspace for package management (Bun remains runtime/test runner)
+- [ ] pnpm workspace for package management
 - [ ] Turborepo for task orchestration
-- [ ] Shared tsconfig.base.json, biome.json, oxlintrc at root
+- [ ] Shared tsconfig.base.json and root `vite.config.ts` lint/fmt blocks
 - [ ] Per-package build, test, typecheck tasks
 - [ ] CI workflow updated for monorepo
 
