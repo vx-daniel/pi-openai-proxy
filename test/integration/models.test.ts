@@ -5,138 +5,139 @@
  * Only available (auth-configured) models are exposed through the API.
  */
 
-import { beforeAll, describe, expect, test } from "vite-plus/test";
-import { getAvailableModels, initRegistry } from "@proxy/pi/registry";
-import { isErrorBody, isModelListBody, isModelObject, jsonBody, testApp } from "../helpers";
+import { getAvailableModels, initRegistry } from '@proxy/pi/registry'
+import { beforeAll, describe, expect, test } from 'vite-plus/test'
 
-let app: ReturnType<typeof testApp>;
+import { isErrorBody, isModelListBody, isModelObject, jsonBody, testApp } from '../helpers'
+
+let app: ReturnType<typeof testApp>
 
 beforeAll(async () => {
-	await initRegistry();
-	app = testApp();
-});
+  await initRegistry()
+  app = testApp()
+})
 
-describe("GET /v1/models", () => {
-	test("returns OpenAI-compatible list shape", async () => {
-		const res = await app.request("/v1/models");
-		expect(res.status).toBe(200);
+describe('GET /v1/models', () => {
+  test('returns OpenAI-compatible list shape', async () => {
+    const res = await app.request('/v1/models')
+    expect(res.status).toBe(200)
 
-		const body = await jsonBody(res);
-		expect(isModelListBody(body)).toBe(true);
-		if (!isModelListBody(body)) return;
+    const body = await jsonBody(res)
+    expect(isModelListBody(body)).toBe(true)
+    if (!isModelListBody(body)) return
 
-		expect(body.object).toBe("list");
-		expect(body.data).toBeInstanceOf(Array);
+    expect(body.object).toBe('list')
+    expect(body.data).toBeInstanceOf(Array)
 
-		for (const first of body.data.slice(0, 1)) {
-			expect(first.object).toBe("model");
-			expect(first.owned_by).toBeDefined();
-			expect(first.created).toBeTypeOf("number");
-		}
-	});
+    for (const first of body.data.slice(0, 1)) {
+      expect(first.object).toBe('model')
+      expect(first.owned_by).toBeDefined()
+      expect(first.created).toBeTypeOf('number')
+    }
+  })
 
-	test("model items have correct shape when auth is configured", async () => {
-		const models = getAvailableModels();
-		if (models.length === 0) return;
+  test('model items have correct shape when auth is configured', async () => {
+    const models = getAvailableModels()
+    if (models.length === 0) return
 
-		const listRes = await app.request("/v1/models");
-		const listBody = await jsonBody(listRes);
-		if (!isModelListBody(listBody)) return;
-		if (listBody.data.length === 0) return;
+    const listRes = await app.request('/v1/models')
+    const listBody = await jsonBody(listRes)
+    if (!isModelListBody(listBody)) return
+    if (listBody.data.length === 0) return
 
-		const first = listBody.data[0];
-		if (first === undefined) return;
-		const publicId = first.id;
-		const encodedId = encodeURIComponent(publicId);
+    const first = listBody.data[0]
+    if (first === undefined) return
+    const publicId = first.id
+    const encodedId = encodeURIComponent(publicId)
 
-		const res = await app.request(`/v1/models/${encodedId}`);
-		expect(res.status).toBe(200);
+    const res = await app.request(`/v1/models/${encodedId}`)
+    expect(res.status).toBe(200)
 
-		const body = await jsonBody(res);
-		expect(isModelObject(body)).toBe(true);
-		if (!isModelObject(body)) return;
+    const body = await jsonBody(res)
+    expect(isModelObject(body)).toBe(true)
+    if (!isModelObject(body)) return
 
-		expect(body.id).toBe(publicId);
-		expect(body.object).toBe("model");
-		expect(body.created).toBeTypeOf("number");
-		expect(body.owned_by).toBeTypeOf("string");
-	});
-});
+    expect(body.id).toBe(publicId)
+    expect(body.object).toBe('model')
+    expect(body.created).toBeTypeOf('number')
+    expect(body.owned_by).toBeTypeOf('string')
+  })
+})
 
-describe("GET /v1/models/:model", () => {
-	test("returns model by public ID", async () => {
-		const models = getAvailableModels();
-		if (models.length === 0) return;
+describe('GET /v1/models/:model', () => {
+  test('returns model by public ID', async () => {
+    const models = getAvailableModels()
+    if (models.length === 0) return
 
-		const listRes = await app.request("/v1/models");
-		const listBody = await jsonBody(listRes);
-		if (!isModelListBody(listBody)) return;
-		if (listBody.data.length === 0) return;
+    const listRes = await app.request('/v1/models')
+    const listBody = await jsonBody(listRes)
+    if (!isModelListBody(listBody)) return
+    if (listBody.data.length === 0) return
 
-		const first = listBody.data[0];
-		if (first === undefined) return;
-		const publicId = first.id;
-		const encodedId = encodeURIComponent(publicId);
+    const first = listBody.data[0]
+    if (first === undefined) return
+    const publicId = first.id
+    const encodedId = encodeURIComponent(publicId)
 
-		const res = await app.request(`/v1/models/${encodedId}`);
-		expect(res.status).toBe(200);
+    const res = await app.request(`/v1/models/${encodedId}`)
+    expect(res.status).toBe(200)
 
-		const body = await jsonBody(res);
-		expect(isModelObject(body)).toBe(true);
-		if (!isModelObject(body)) return;
+    const body = await jsonBody(res)
+    expect(isModelObject(body)).toBe(true)
+    if (!isModelObject(body)) return
 
-		expect(body.id).toBe(publicId);
-		expect(body.object).toBe("model");
-		expect(body.owned_by).toBe(first.owned_by);
-	});
+    expect(body.id).toBe(publicId)
+    expect(body.object).toBe('model')
+    expect(body.owned_by).toBe(first.owned_by)
+  })
 
-	test("returns model by canonical ID fallback for exposed models", async () => {
-		const models = getAvailableModels();
-		if (models.length === 0) return;
+  test('returns model by canonical ID fallback for exposed models', async () => {
+    const models = getAvailableModels()
+    if (models.length === 0) return
 
-		const first = models[0];
-		if (first === undefined) return;
-		const canonicalId = `${first.provider}/${first.id}`;
-		const encodedId = encodeURIComponent(canonicalId);
+    const first = models[0]
+    if (first === undefined) return
+    const canonicalId = `${first.provider}/${first.id}`
+    const encodedId = encodeURIComponent(canonicalId)
 
-		const res = await app.request(`/v1/models/${encodedId}`);
-		expect(res.status).toBe(200);
+    const res = await app.request(`/v1/models/${encodedId}`)
+    expect(res.status).toBe(200)
 
-		const body = await jsonBody(res);
-		expect(isModelObject(body)).toBe(true);
-		if (!isModelObject(body)) return;
+    const body = await jsonBody(res)
+    expect(isModelObject(body)).toBe(true)
+    if (!isModelObject(body)) return
 
-		expect(body.object).toBe("model");
-		expect(body.owned_by).toBe(first.provider);
-	});
+    expect(body.object).toBe('model')
+    expect(body.owned_by).toBe(first.provider)
+  })
 
-	test("returns model by unencoded path with slashes", async () => {
-		const models = getAvailableModels();
-		if (models.length === 0) return;
+  test('returns model by unencoded path with slashes', async () => {
+    const models = getAvailableModels()
+    if (models.length === 0) return
 
-		const first = models[0];
-		if (first === undefined) return;
-		const canonicalId = `${first.provider}/${first.id}`;
+    const first = models[0]
+    if (first === undefined) return
+    const canonicalId = `${first.provider}/${first.id}`
 
-		const res = await app.request(`/v1/models/${canonicalId}`);
-		expect(res.status).toBe(200);
+    const res = await app.request(`/v1/models/${canonicalId}`)
+    expect(res.status).toBe(200)
 
-		const body = await jsonBody(res);
-		expect(isModelObject(body)).toBe(true);
-		if (!isModelObject(body)) return;
+    const body = await jsonBody(res)
+    expect(isModelObject(body)).toBe(true)
+    if (!isModelObject(body)) return
 
-		expect(body.object).toBe("model");
-	});
+    expect(body.object).toBe('model')
+  })
 
-	test("returns 404 for unknown model", async () => {
-		const res = await app.request("/v1/models/nonexistent%2Fmodel");
-		expect(res.status).toBe(404);
+  test('returns 404 for unknown model', async () => {
+    const res = await app.request('/v1/models/nonexistent%2Fmodel')
+    expect(res.status).toBe(404)
 
-		const body = await jsonBody(res);
-		expect(isErrorBody(body)).toBe(true);
-		if (!isErrorBody(body)) return;
+    const body = await jsonBody(res)
+    expect(isErrorBody(body)).toBe(true)
+    if (!isErrorBody(body)) return
 
-		expect(body.error.type).toBe("invalid_request_error");
-		expect(body.error.code).toBe("model_not_found");
-	});
-});
+    expect(body.error.type).toBe('invalid_request_error')
+    expect(body.error.code).toBe('model_not_found')
+  })
+})

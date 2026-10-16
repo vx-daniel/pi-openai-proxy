@@ -5,17 +5,17 @@
  */
 
 import type {
-	Api,
-	AssistantMessage,
-	AssistantMessageEventStream,
-	Context,
-	Model,
-	SimpleStreamOptions,
-	ThinkingLevel,
-} from "@earendil-works/pi-ai";
-import type { ChatCompletionRequest, OpenAIFunctionTool } from "@proxy/openai/schemas";
-import { getRuntime } from "@proxy/pi/registry";
-import { isRecord } from "@proxy/utils/guards";
+  Api,
+  AssistantMessage,
+  AssistantMessageEventStream,
+  Context,
+  Model,
+  SimpleStreamOptions,
+  ThinkingLevel
+} from '@earendil-works/pi-ai'
+import type { ChatCompletionRequest, OpenAIFunctionTool } from '@proxy/openai/schemas'
+import { getRuntime } from '@proxy/pi/registry'
+import { isRecord } from '@proxy/utils/guards'
 
 /**
  * Map OpenAI reasoning_effort to pi ThinkingLevel.
@@ -26,24 +26,24 @@ import { isRecord } from "@proxy/utils/guards";
  * "none" maps to "minimal" (pi has no "none" level).
  */
 const REASONING_EFFORT_MAP: Record<string, ThinkingLevel> = {
-	none: "minimal",
-	minimal: "minimal",
-	low: "low",
-	medium: "medium",
-	high: "high",
-	xhigh: "xhigh",
-};
+  none: 'minimal',
+  minimal: 'minimal',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'xhigh'
+}
 
 /**
  * APIs that accept the full set of OpenAI passthrough fields (stop, seed, top_p,
  * tool_choice, frequency_penalty, etc.) as top-level payload properties.
  */
 const OPENAI_FULL_PASSTHROUGH_APIS = new Set([
-	"openai-completions",
-	"openai-responses",
-	"azure-openai-responses",
-	"mistral-conversations",
-]);
+  'openai-completions',
+  'openai-responses',
+  'azure-openai-responses',
+  'mistral-conversations'
+])
 
 /**
  * The Codex Responses API accepts only tool_choice and parallel_tool_calls.
@@ -52,11 +52,11 @@ const OPENAI_FULL_PASSTHROUGH_APIS = new Set([
  * tool_choice: "auto" and parallel_tool_calls: true; onPayload overrides
  * those when the client sends explicit values.
  */
-const CODEX_APIS = new Set(["openai-codex-responses"]);
+const CODEX_APIS = new Set(['openai-codex-responses'])
 
-const ANTHROPIC_APIS = new Set(["anthropic-messages"]);
+const ANTHROPIC_APIS = new Set(['anthropic-messages'])
 
-const GOOGLE_APIS = new Set(["google-generative-ai", "google-gemini-cli", "google-vertex"]);
+const GOOGLE_APIS = new Set(['google-generative-ai', 'google-gemini-cli', 'google-vertex'])
 
 // ---------------------------------------------------------------------------
 // OpenAI-compatible payload fields
@@ -64,18 +64,18 @@ const GOOGLE_APIS = new Set(["google-generative-ai", "google-gemini-cli", "googl
 
 /** Request fields forwarded verbatim to OpenAI-compatible APIs, in payload order. */
 const OPENAI_PASSTHROUGH_FIELDS = [
-	"stop",
-	"user",
-	"top_p",
-	"frequency_penalty",
-	"presence_penalty",
-	"seed",
-	"response_format",
-	"tool_choice",
-	"parallel_tool_calls",
-	"metadata",
-	"prediction",
-] as const satisfies readonly (keyof ChatCompletionRequest)[];
+  'stop',
+  'user',
+  'top_p',
+  'frequency_penalty',
+  'presence_penalty',
+  'seed',
+  'response_format',
+  'tool_choice',
+  'parallel_tool_calls',
+  'metadata',
+  'prediction'
+] as const satisfies readonly (keyof ChatCompletionRequest)[]
 
 /**
  * Collect OpenAI-format fields for OpenAI-compatible APIs.
@@ -84,20 +84,20 @@ const OPENAI_PASSTHROUGH_FIELDS = [
  * @internal Exported for unit testing only.
  */
 export function collectOpenAIPayloadFields(
-	request: ChatCompletionRequest,
+  request: ChatCompletionRequest
 ): Record<string, unknown> | undefined {
-	const fields: Record<string, unknown> = {};
-	let hasFields = false;
+  const fields: Record<string, unknown> = {}
+  let hasFields = false
 
-	for (const key of OPENAI_PASSTHROUGH_FIELDS) {
-		const value = request[key];
-		if (value !== undefined) {
-			fields[key] = value;
-			hasFields = true;
-		}
-	}
+  for (const key of OPENAI_PASSTHROUGH_FIELDS) {
+    const value = request[key]
+    if (value !== undefined) {
+      fields[key] = value
+      hasFields = true
+    }
+  }
 
-	return hasFields ? fields : undefined;
+  return hasFields ? fields : undefined
 }
 
 // ---------------------------------------------------------------------------
@@ -115,22 +115,22 @@ export function collectOpenAIPayloadFields(
  * @internal Exported for unit testing only.
  */
 export function translateToolChoiceForAnthropic(
-	toolChoice: ChatCompletionRequest["tool_choice"],
+  toolChoice: ChatCompletionRequest['tool_choice']
 ): Record<string, unknown> | undefined {
-	if (toolChoice === undefined) {
-		return undefined;
-	}
-	if (toolChoice === "auto") {
-		return { type: "auto" };
-	}
-	if (toolChoice === "none") {
-		return { type: "none" };
-	}
-	if (toolChoice === "required") {
-		return { type: "any" };
-	}
-	// Named function choice: { type: "function", function: { name } }
-	return { type: "tool", name: toolChoice.function.name };
+  if (toolChoice === undefined) {
+    return undefined
+  }
+  if (toolChoice === 'auto') {
+    return { type: 'auto' }
+  }
+  if (toolChoice === 'none') {
+    return { type: 'none' }
+  }
+  if (toolChoice === 'required') {
+    return { type: 'any' }
+  }
+  // Named function choice: { type: "function", function: { name } }
+  return { type: 'tool', name: toolChoice.function.name }
 }
 
 /**
@@ -149,45 +149,45 @@ export function translateToolChoiceForAnthropic(
  * @internal Exported for unit testing only.
  */
 export function collectAnthropicPayloadFields(
-	request: ChatCompletionRequest,
+  request: ChatCompletionRequest
 ): Record<string, unknown> | undefined {
-	const fields: Record<string, unknown> = {};
-	let hasFields = false;
+  const fields: Record<string, unknown> = {}
+  let hasFields = false
 
-	if (request.top_p !== undefined) {
-		fields["top_p"] = request.top_p;
-		hasFields = true;
-	}
+  if (request.top_p !== undefined) {
+    fields['top_p'] = request.top_p
+    hasFields = true
+  }
 
-	if (request.stop !== undefined) {
-		const sequences = Array.isArray(request.stop) ? request.stop : [request.stop];
-		fields["stop_sequences"] = sequences;
-		hasFields = true;
-	}
+  if (request.stop !== undefined) {
+    const sequences = Array.isArray(request.stop) ? request.stop : [request.stop]
+    fields['stop_sequences'] = sequences
+    hasFields = true
+  }
 
-	// Build tool_choice with optional disable_parallel_tool_use
-	const toolChoice = translateToolChoiceForAnthropic(request.tool_choice);
-	const disableParallel = request.parallel_tool_calls === false;
+  // Build tool_choice with optional disable_parallel_tool_use
+  const toolChoice = translateToolChoiceForAnthropic(request.tool_choice)
+  const disableParallel = request.parallel_tool_calls === false
 
-	if (toolChoice !== undefined) {
-		if (disableParallel) {
-			toolChoice["disable_parallel_tool_use"] = true;
-		}
-		fields["tool_choice"] = toolChoice;
-		hasFields = true;
-	} else if (disableParallel) {
-		// No explicit tool_choice but parallel disabled: set auto with flag
-		fields["tool_choice"] = { type: "auto", disable_parallel_tool_use: true };
-		hasFields = true;
-	}
+  if (toolChoice !== undefined) {
+    if (disableParallel) {
+      toolChoice['disable_parallel_tool_use'] = true
+    }
+    fields['tool_choice'] = toolChoice
+    hasFields = true
+  } else if (disableParallel) {
+    // No explicit tool_choice but parallel disabled: set auto with flag
+    fields['tool_choice'] = { type: 'auto', disable_parallel_tool_use: true }
+    hasFields = true
+  }
 
-	// Map user to metadata.user_id (Anthropic only accepts user_id in metadata)
-	if (request.user !== undefined) {
-		fields["metadata"] = { user_id: request.user };
-		hasFields = true;
-	}
+  // Map user to metadata.user_id (Anthropic only accepts user_id in metadata)
+  if (request.user !== undefined) {
+    fields['metadata'] = { user_id: request.user }
+    hasFields = true
+  }
 
-	return hasFields ? fields : undefined;
+  return hasFields ? fields : undefined
 }
 
 // ---------------------------------------------------------------------------
@@ -204,19 +204,19 @@ export function collectAnthropicPayloadFields(
  * in the same way, but ANY forces tool use)
  */
 function translateToolChoiceForGoogle(
-	toolChoice: ChatCompletionRequest["tool_choice"],
+  toolChoice: ChatCompletionRequest['tool_choice']
 ): string | undefined {
-	if (toolChoice === undefined) {
-		return undefined;
-	}
-	if (toolChoice === "auto") {
-		return "AUTO";
-	}
-	if (toolChoice === "none") {
-		return "NONE";
-	}
-	// "required" or named function -> force tool use
-	return "ANY";
+  if (toolChoice === undefined) {
+    return undefined
+  }
+  if (toolChoice === 'auto') {
+    return 'AUTO'
+  }
+  if (toolChoice === 'none') {
+    return 'NONE'
+  }
+  // "required" or named function -> force tool use
+  return 'ANY'
 }
 
 /**
@@ -239,61 +239,61 @@ function translateToolChoiceForGoogle(
  * @internal Exported for unit testing only.
  */
 export function patchGooglePayload(
-	payload: Record<string, unknown>,
-	request: ChatCompletionRequest,
+  payload: Record<string, unknown>,
+  request: ChatCompletionRequest
 ): boolean {
-	// Access or create config.generationConfig
-	const config = isRecord(payload["config"]) ? payload["config"] : undefined;
-	if (config === undefined) {
-		return false;
-	}
+  // Access or create config.generationConfig
+  const config = isRecord(payload['config']) ? payload['config'] : undefined
+  if (config === undefined) {
+    return false
+  }
 
-	let patched = false;
-	const genFields = collectGoogleGenerationFields(request);
-	if (Object.keys(genFields).length > 0) {
-		const genConfig = isRecord(config["generationConfig"]) ? config["generationConfig"] : {};
-		Object.assign(genConfig, genFields);
-		config["generationConfig"] = genConfig;
-		patched = true;
-	}
+  let patched = false
+  const genFields = collectGoogleGenerationFields(request)
+  if (Object.keys(genFields).length > 0) {
+    const genConfig = isRecord(config['generationConfig']) ? config['generationConfig'] : {}
+    Object.assign(genConfig, genFields)
+    config['generationConfig'] = genConfig
+    patched = true
+  }
 
-	// Tool choice -> toolConfig.functionCallingConfig.mode
-	const mode = translateToolChoiceForGoogle(request.tool_choice);
-	if (mode !== undefined) {
-		const toolConfig = isRecord(config["toolConfig"]) ? config["toolConfig"] : {};
-		const funcConfig = isRecord(toolConfig["functionCallingConfig"])
-			? toolConfig["functionCallingConfig"]
-			: {};
-		funcConfig["mode"] = mode;
-		toolConfig["functionCallingConfig"] = funcConfig;
-		config["toolConfig"] = toolConfig;
-		patched = true;
-	}
+  // Tool choice -> toolConfig.functionCallingConfig.mode
+  const mode = translateToolChoiceForGoogle(request.tool_choice)
+  if (mode !== undefined) {
+    const toolConfig = isRecord(config['toolConfig']) ? config['toolConfig'] : {}
+    const funcConfig = isRecord(toolConfig['functionCallingConfig'])
+      ? toolConfig['functionCallingConfig']
+      : {}
+    funcConfig['mode'] = mode
+    toolConfig['functionCallingConfig'] = funcConfig
+    config['toolConfig'] = toolConfig
+    patched = true
+  }
 
-	return patched;
+  return patched
 }
 
 /**
  * Collect Google generationConfig fields (camelCase) translated from the request.
  */
 function collectGoogleGenerationFields(request: ChatCompletionRequest): Record<string, unknown> {
-	const fields: Record<string, unknown> = {};
-	if (request.top_p !== undefined) {
-		fields["topP"] = request.top_p;
-	}
-	if (request.stop !== undefined) {
-		fields["stopSequences"] = Array.isArray(request.stop) ? request.stop : [request.stop];
-	}
-	if (request.seed !== undefined) {
-		fields["seed"] = request.seed;
-	}
-	if (request.frequency_penalty !== undefined) {
-		fields["frequencyPenalty"] = request.frequency_penalty;
-	}
-	if (request.presence_penalty !== undefined) {
-		fields["presencePenalty"] = request.presence_penalty;
-	}
-	return fields;
+  const fields: Record<string, unknown> = {}
+  if (request.top_p !== undefined) {
+    fields['topP'] = request.top_p
+  }
+  if (request.stop !== undefined) {
+    fields['stopSequences'] = Array.isArray(request.stop) ? request.stop : [request.stop]
+  }
+  if (request.seed !== undefined) {
+    fields['seed'] = request.seed
+  }
+  if (request.frequency_penalty !== undefined) {
+    fields['frequencyPenalty'] = request.frequency_penalty
+  }
+  if (request.presence_penalty !== undefined) {
+    fields['presencePenalty'] = request.presence_penalty
+  }
+  return fields
 }
 
 // ---------------------------------------------------------------------------
@@ -310,21 +310,21 @@ function collectGoogleGenerationFields(request: ChatCompletionRequest): Record<s
  * @internal Exported for unit testing only.
  */
 export function collectCodexPayloadFields(
-	request: ChatCompletionRequest,
+  request: ChatCompletionRequest
 ): Record<string, unknown> | undefined {
-	const fields: Record<string, unknown> = {};
-	let hasFields = false;
+  const fields: Record<string, unknown> = {}
+  let hasFields = false
 
-	if (request.tool_choice !== undefined) {
-		fields["tool_choice"] = request.tool_choice;
-		hasFields = true;
-	}
-	if (request.parallel_tool_calls !== undefined) {
-		fields["parallel_tool_calls"] = request.parallel_tool_calls;
-		hasFields = true;
-	}
+  if (request.tool_choice !== undefined) {
+    fields['tool_choice'] = request.tool_choice
+    hasFields = true
+  }
+  if (request.parallel_tool_calls !== undefined) {
+    fields['parallel_tool_calls'] = request.parallel_tool_calls
+    hasFields = true
+  }
 
-	return hasFields ? fields : undefined;
+  return hasFields ? fields : undefined
 }
 
 // ---------------------------------------------------------------------------
@@ -347,28 +347,28 @@ export function collectCodexPayloadFields(
  * @internal Exported for unit testing only.
  */
 export function collectPayloadFields(
-	request: ChatCompletionRequest,
-	api: string,
+  request: ChatCompletionRequest,
+  api: string
 ): Record<string, unknown> | undefined {
-	if (OPENAI_FULL_PASSTHROUGH_APIS.has(api)) {
-		return collectOpenAIPayloadFields(request);
-	}
-	if (CODEX_APIS.has(api)) {
-		return collectCodexPayloadFields(request);
-	}
-	if (ANTHROPIC_APIS.has(api)) {
-		return collectAnthropicPayloadFields(request);
-	}
-	// Google and others: no flat field collection
-	// (Google uses patchGooglePayload directly in the onPayload callback)
-	return undefined;
+  if (OPENAI_FULL_PASSTHROUGH_APIS.has(api)) {
+    return collectOpenAIPayloadFields(request)
+  }
+  if (CODEX_APIS.has(api)) {
+    return collectCodexPayloadFields(request)
+  }
+  if (ANTHROPIC_APIS.has(api)) {
+    return collectAnthropicPayloadFields(request)
+  }
+  // Google and others: no flat field collection
+  // (Google uses patchGooglePayload directly in the onPayload callback)
+  return undefined
 }
 
 /**
  * Whether the given API requires Google-style nested payload patching.
  */
 function isGoogleApi(api: string): boolean {
-	return GOOGLE_APIS.has(api);
+  return GOOGLE_APIS.has(api)
 }
 
 /**
@@ -385,23 +385,23 @@ function isGoogleApi(api: string): boolean {
  * @internal Exported for unit testing only.
  */
 export function collectToolStrictFlags(
-	tools: OpenAIFunctionTool[] | undefined,
+  tools: OpenAIFunctionTool[] | undefined
 ): ReadonlyMap<number, true> | undefined {
-	if (tools === undefined || tools.length === 0) {
-		return undefined;
-	}
+  if (tools === undefined || tools.length === 0) {
+    return undefined
+  }
 
-	let flags: Map<number, true> | undefined;
+  let flags: Map<number, true> | undefined
 
-	for (let i = 0; i < tools.length; i++) {
-		const tool = tools[i];
-		if (tool?.function.strict === true) {
-			flags ??= new Map();
-			flags.set(i, true);
-		}
-	}
+  for (let i = 0; i < tools.length; i++) {
+    const tool = tools[i]
+    if (tool?.function.strict === true) {
+      flags ??= new Map()
+      flags.set(i, true)
+    }
+  }
 
-	return flags;
+  return flags
 }
 
 /**
@@ -414,34 +414,34 @@ export function collectToolStrictFlags(
  * @internal Exported for unit testing only.
  */
 export function applyToolStrictFlags(
-	payload: Record<string, unknown>,
-	strictFlags: ReadonlyMap<number, true>,
+  payload: Record<string, unknown>,
+  strictFlags: ReadonlyMap<number, true>
 ): void {
-	const tools = payload["tools"];
-	if (!Array.isArray(tools)) {
-		return;
-	}
-	for (const [index, _flag] of strictFlags) {
-		const tool = tools[index] as unknown;
-		if (isRecord(tool)) {
-			const fn = tool["function"];
-			if (isRecord(fn)) {
-				fn["strict"] = true;
-			}
-		}
-	}
+  const tools = payload['tools']
+  if (!Array.isArray(tools)) {
+    return
+  }
+  for (const [index, _flag] of strictFlags) {
+    const tool = tools[index] as unknown
+    if (isRecord(tool)) {
+      const fn = tool['function']
+      if (isRecord(fn)) {
+        fn['strict'] = true
+      }
+    }
+  }
 }
 
 /**
  * Options for building pi stream options, beyond the parsed request itself.
  */
 export interface CompletionOptions {
-	/** Per-request upstream API key override via X-Pi-Upstream-Api-Key header. */
-	readonly upstreamApiKey?: string | undefined;
-	/** Abort signal for cancellation. */
-	readonly signal?: AbortSignal | undefined;
-	/** Upstream timeout in milliseconds. Creates a timeout-aware abort signal. */
-	readonly upstreamTimeoutMs?: number | undefined;
+  /** Per-request upstream API key override via X-Pi-Upstream-Api-Key header. */
+  readonly upstreamApiKey?: string | undefined
+  /** Abort signal for cancellation. */
+  readonly signal?: AbortSignal | undefined
+  /** Upstream timeout in milliseconds. Creates a timeout-aware abort signal. */
+  readonly upstreamTimeoutMs?: number | undefined
 }
 
 /**
@@ -449,116 +449,116 @@ export interface CompletionOptions {
  * Returns the combined signal, or undefined if neither is provided.
  */
 function buildCombinedSignal(
-	clientSignal: AbortSignal | undefined,
-	timeoutMs: number | undefined,
+  clientSignal: AbortSignal | undefined,
+  timeoutMs: number | undefined
 ): AbortSignal | undefined {
-	if (clientSignal === undefined && timeoutMs === undefined) {
-		return undefined;
-	}
-	if (timeoutMs === undefined) {
-		return clientSignal;
-	}
-	const timeoutSignal = AbortSignal.timeout(timeoutMs);
-	if (clientSignal === undefined) {
-		return timeoutSignal;
-	}
-	return AbortSignal.any([clientSignal, timeoutSignal]);
+  if (clientSignal === undefined && timeoutMs === undefined) {
+    return undefined
+  }
+  if (timeoutMs === undefined) {
+    return clientSignal
+  }
+  const timeoutSignal = AbortSignal.timeout(timeoutMs)
+  if (clientSignal === undefined) {
+    return timeoutSignal
+  }
+  return AbortSignal.any([clientSignal, timeoutSignal])
 }
 
 /**
  * Build pi SimpleStreamOptions from an OpenAI request.
  */
 async function buildStreamOptions(
-	model: Model<Api>,
-	request: ChatCompletionRequest,
-	options: CompletionOptions,
+  model: Model<Api>,
+  request: ChatCompletionRequest,
+  options: CompletionOptions
 ): Promise<SimpleStreamOptions> {
-	const opts: SimpleStreamOptions = {};
+  const opts: SimpleStreamOptions = {}
 
-	// openai-codex-responses API does not support temperature
-	if (request.temperature !== undefined && model.api !== "openai-codex-responses") {
-		opts.temperature = request.temperature;
-	}
+  // openai-codex-responses API does not support temperature
+  if (request.temperature !== undefined && model.api !== 'openai-codex-responses') {
+    opts.temperature = request.temperature
+  }
 
-	// Normalize max_tokens / max_completion_tokens
-	const maxTokens = request.max_completion_tokens ?? request.max_tokens;
-	if (maxTokens !== undefined) {
-		opts.maxTokens = maxTokens;
-	}
+  // Normalize max_tokens / max_completion_tokens
+  const maxTokens = request.max_completion_tokens ?? request.max_tokens
+  if (maxTokens !== undefined) {
+    opts.maxTokens = maxTokens
+  }
 
-	// Map reasoning_effort to pi ThinkingLevel
-	if (request.reasoning_effort !== undefined) {
-		const level = REASONING_EFFORT_MAP[request.reasoning_effort];
-		if (level !== undefined) {
-			opts.reasoning = level;
-		}
-	}
+  // Map reasoning_effort to pi ThinkingLevel
+  if (request.reasoning_effort !== undefined) {
+    const level = REASONING_EFFORT_MAP[request.reasoning_effort]
+    if (level !== undefined) {
+      opts.reasoning = level
+    }
+  }
 
-	// Combine client disconnect signal with upstream timeout
-	const combinedSignal = buildCombinedSignal(options.signal, options.upstreamTimeoutMs);
-	if (combinedSignal !== undefined) {
-		opts.signal = combinedSignal;
-	}
+  // Combine client disconnect signal with upstream timeout
+  const combinedSignal = buildCombinedSignal(options.signal, options.upstreamTimeoutMs)
+  if (combinedSignal !== undefined) {
+    opts.signal = combinedSignal
+  }
 
-	// A per-request upstream key (X-Pi-Upstream-Api-Key) overrides everything. Without one, leave
-	// apiKey unset: the ModelRuntime resolves request auth itself for the chosen model (API keys,
-	// OAuth with refresh, model-specific headers, dynamic models.json headers).
-	if (options.upstreamApiKey !== undefined) {
-		opts.apiKey = options.upstreamApiKey;
-	}
+  // A per-request upstream key (X-Pi-Upstream-Api-Key) overrides everything. Without one, leave
+  // apiKey unset: the ModelRuntime resolves request auth itself for the chosen model (API keys,
+  // OAuth with refresh, model-specific headers, dynamic models.json headers).
+  if (options.upstreamApiKey !== undefined) {
+    opts.apiKey = options.upstreamApiKey
+  }
 
-	// Inject passthrough fields and tool strict flags via onPayload
-	const payloadFields = collectPayloadFields(request, model.api);
-	const strictFlags = collectToolStrictFlags(request.tools);
-	const needsGooglePatch = isGoogleApi(model.api);
+  // Inject passthrough fields and tool strict flags via onPayload
+  const payloadFields = collectPayloadFields(request, model.api)
+  const strictFlags = collectToolStrictFlags(request.tools)
+  const needsGooglePatch = isGoogleApi(model.api)
 
-	if (payloadFields !== undefined || strictFlags !== undefined || needsGooglePatch) {
-		opts.onPayload = (payload: unknown) => {
-			if (isRecord(payload)) {
-				// Flat field injection (OpenAI-compatible and Anthropic)
-				if (payloadFields !== undefined) {
-					for (const [key, value] of Object.entries(payloadFields)) {
-						payload[key] = value;
-					}
-				}
-				// Google nested generationConfig patching
-				if (needsGooglePatch) {
-					patchGooglePayload(payload, request);
-				}
-				// Tool strict flag patching (OpenAI-compatible only)
-				if (strictFlags !== undefined) {
-					applyToolStrictFlags(payload, strictFlags);
-				}
-			}
-			return payload;
-		};
-	}
+  if (payloadFields !== undefined || strictFlags !== undefined || needsGooglePatch) {
+    opts.onPayload = (payload: unknown) => {
+      if (isRecord(payload)) {
+        // Flat field injection (OpenAI-compatible and Anthropic)
+        if (payloadFields !== undefined) {
+          for (const [key, value] of Object.entries(payloadFields)) {
+            payload[key] = value
+          }
+        }
+        // Google nested generationConfig patching
+        if (needsGooglePatch) {
+          patchGooglePayload(payload, request)
+        }
+        // Tool strict flag patching (OpenAI-compatible only)
+        if (strictFlags !== undefined) {
+          applyToolStrictFlags(payload, strictFlags)
+        }
+      }
+      return payload
+    }
+  }
 
-	return opts;
+  return opts
 }
 
 /**
  * Non-streaming completion: returns the final AssistantMessage.
  */
 export async function piComplete(
-	model: Model<Api>,
-	context: Context,
-	request: ChatCompletionRequest,
-	options: CompletionOptions,
+  model: Model<Api>,
+  context: Context,
+  request: ChatCompletionRequest,
+  options: CompletionOptions
 ): Promise<AssistantMessage> {
-	const opts = await buildStreamOptions(model, request, options);
-	return getRuntime().completeSimple(model, context, opts);
+  const opts = await buildStreamOptions(model, request, options)
+  return getRuntime().completeSimple(model, context, opts)
 }
 
 /**
  * Streaming completion: returns an event stream with abort capability.
  */
 export async function piStream(
-	model: Model<Api>,
-	context: Context,
-	request: ChatCompletionRequest,
-	options: CompletionOptions,
+  model: Model<Api>,
+  context: Context,
+  request: ChatCompletionRequest,
+  options: CompletionOptions
 ): Promise<AssistantMessageEventStream> {
-	const opts = await buildStreamOptions(model, request, options);
-	return getRuntime().streamSimple(model, context, opts);
+  const opts = await buildStreamOptions(model, request, options)
+  return getRuntime().streamSimple(model, context, opts)
 }

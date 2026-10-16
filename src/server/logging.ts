@@ -5,37 +5,37 @@
  */
 
 export interface LogContext {
-	readonly requestId: string;
-	readonly clientRequestId?: string | undefined;
-	readonly method: string;
-	readonly path: string;
+  readonly requestId: string
+  readonly clientRequestId?: string | undefined
+  readonly method: string
+  readonly path: string
 }
 
 function timestamp(): string {
-	return new Date().toISOString();
+  return new Date().toISOString()
 }
 
 export function logRequest(ctx: LogContext): void {
-	const entry = {
-		ts: timestamp(),
-		level: "info",
-		event: "request",
-		requestId: ctx.requestId,
-		clientRequestId: ctx.clientRequestId,
-		method: ctx.method,
-		path: ctx.path,
-	};
-	console.error(JSON.stringify(entry));
+  const entry = {
+    ts: timestamp(),
+    level: 'info',
+    event: 'request',
+    requestId: ctx.requestId,
+    clientRequestId: ctx.clientRequestId,
+    method: ctx.method,
+    path: ctx.path
+  }
+  console.error(JSON.stringify(entry))
 }
 
 /** What a chat request asked for and what it resolved to. */
 export interface ChatRequestLogDetails {
-	/** The model string the client sent, which may be an alias or a prefixed public id. */
-	readonly requestedModel: string;
-	/** The canonical `provider/id` the exposure engine resolved it to. */
-	readonly model: string;
-	readonly provider: string;
-	readonly stream: boolean;
+  /** The model string the client sent, which may be an alias or a prefixed public id. */
+  readonly requestedModel: string
+  /** The canonical `provider/id` the exposure engine resolved it to. */
+  readonly model: string
+  readonly provider: string
+  readonly stream: boolean
 }
 
 /**
@@ -44,86 +44,86 @@ export interface ChatRequestLogDetails {
  * content or credentials.
  */
 export function logChatRequest(ctx: LogContext, details: ChatRequestLogDetails): void {
-	const entry = {
-		ts: timestamp(),
-		level: "info",
-		event: "chat_request",
-		requestId: ctx.requestId,
-		clientRequestId: ctx.clientRequestId,
-		method: ctx.method,
-		path: ctx.path,
-		requestedModel: details.requestedModel,
-		model: details.model,
-		provider: details.provider,
-		stream: details.stream,
-	};
-	console.error(JSON.stringify(entry));
+  const entry = {
+    ts: timestamp(),
+    level: 'info',
+    event: 'chat_request',
+    requestId: ctx.requestId,
+    clientRequestId: ctx.clientRequestId,
+    method: ctx.method,
+    path: ctx.path,
+    requestedModel: details.requestedModel,
+    model: details.model,
+    provider: details.provider,
+    stream: details.stream
+  }
+  console.error(JSON.stringify(entry))
 }
 
 export function logResponse(ctx: LogContext, status: number, durationMs: number): void {
-	const entry = {
-		ts: timestamp(),
-		level: "info",
-		event: "response",
-		requestId: ctx.requestId,
-		status,
-		durationMs: Math.round(durationMs),
-	};
-	console.error(JSON.stringify(entry));
+  const entry = {
+    ts: timestamp(),
+    level: 'info',
+    event: 'response',
+    requestId: ctx.requestId,
+    status,
+    durationMs: Math.round(durationMs)
+  }
+  console.error(JSON.stringify(entry))
 }
 
 export function logError(ctx: LogContext, message: string, detail?: string): void {
-	const entry = {
-		ts: timestamp(),
-		level: "error",
-		event: "error",
-		requestId: ctx.requestId,
-		message,
-		detail,
-	};
-	console.error(JSON.stringify(entry));
+  const entry = {
+    ts: timestamp(),
+    level: 'error',
+    event: 'error',
+    requestId: ctx.requestId,
+    message,
+    detail
+  }
+  console.error(JSON.stringify(entry))
 }
 
 export function logDisconnect(ctx: LogContext): void {
-	const entry = {
-		ts: timestamp(),
-		level: "info",
-		event: "disconnect",
-		requestId: ctx.requestId,
-	};
-	console.error(JSON.stringify(entry));
+  const entry = {
+    ts: timestamp(),
+    level: 'info',
+    event: 'disconnect',
+    requestId: ctx.requestId
+  }
+  console.error(JSON.stringify(entry))
 }
 
 export function logUpstreamOverload(ctx: LogContext, status: number, code: string): void {
-	const entry = {
-		ts: timestamp(),
-		level: "warn",
-		event: "upstream_overload",
-		requestId: ctx.requestId,
-		upstreamStatus: status,
-		code,
-	};
-	console.error(JSON.stringify(entry));
+  const entry = {
+    ts: timestamp(),
+    level: 'warn',
+    event: 'upstream_overload',
+    requestId: ctx.requestId,
+    upstreamStatus: status,
+    code
+  }
+  console.error(JSON.stringify(entry))
 }
 
 export function logStartup(host: string, port: number, modelCount: number): void {
-	const entry = {
-		ts: timestamp(),
-		level: "info",
-		event: "startup",
-		host,
-		port,
-		modelCount,
-	};
-	console.error(JSON.stringify(entry));
+  const entry = {
+    ts: timestamp(),
+    level: 'info',
+    event: 'startup',
+    host,
+    port,
+    modelCount
+  }
+  console.error(JSON.stringify(entry))
 }
 
 export function logShutdown(signal: string): void {
-	const entry = {
-		ts: timestamp(),
-		level: "info",
-		event: "shutdown",
-		signal,
-	};
-	console.error(JSON.stringify(entry));
+  const entry = {
+    ts: timestamp(),
+    level: 'info',
+    event: 'shutdown',
+    signal
+  }
+  console.error(JSON.stringify(entry))
 }

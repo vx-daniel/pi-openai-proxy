@@ -6,74 +6,75 @@
  * Skips when no credentials are available.
  */
 
-import type OpenAI from "openai";
-import { describe, expect, test } from "vite-plus/test";
-import { createTestClient, getCheapestModel, setup } from "./helpers";
+import type OpenAI from 'openai'
+import { describe, expect, test } from 'vite-plus/test'
 
-describe("SDK streaming chat conformance", () => {
-	test("streaming text completion parses all chunks without SDK errors", async () => {
-		const model = getCheapestModel();
-		if (model === undefined) return;
+import { createTestClient, getCheapestModel, setup } from './helpers'
 
-		const { app } = setup();
-		const client = createTestClient(app);
+describe('SDK streaming chat conformance', () => {
+  test('streaming text completion parses all chunks without SDK errors', async () => {
+    const model = getCheapestModel()
+    if (model === undefined) return
 
-		const stream = await client.chat.completions.create({
-			model: model.id,
-			messages: [{ role: "user", content: "Reply with exactly: hello" }],
-			max_completion_tokens: 32,
-			stream: true,
-		});
+    const { app } = setup()
+    const client = createTestClient(app)
 
-		let chunkCount = 0;
-		let lastFinishReason: string | null = null;
+    const stream = await client.chat.completions.create({
+      model: model.id,
+      messages: [{ role: 'user', content: 'Reply with exactly: hello' }],
+      max_completion_tokens: 32,
+      stream: true
+    })
 
-		for await (const chunk of stream) {
-			chunkCount++;
-			expect(chunk.object).toBe("chat.completion.chunk");
-			expect(chunk.id).toBeTypeOf("string");
-			expect(chunk.created).toBeTypeOf("number");
+    let chunkCount = 0
+    let lastFinishReason: string | null = null
 
-			if (chunk.choices.length > 0) {
-				const choice = chunk.choices[0];
-				if (choice !== undefined) {
-					lastFinishReason = choice.finish_reason;
-				}
-			}
-		}
+    for await (const chunk of stream) {
+      chunkCount++
+      expect(chunk.object).toBe('chat.completion.chunk')
+      expect(chunk.id).toBeTypeOf('string')
+      expect(chunk.created).toBeTypeOf('number')
 
-		expect(chunkCount).toBeGreaterThan(0);
-		expect(lastFinishReason).not.toBeNull();
-	});
+      if (chunk.choices.length > 0) {
+        const choice = chunk.choices[0]
+        if (choice !== undefined) {
+          lastFinishReason = choice.finish_reason
+        }
+      }
+    }
 
-	test("stream_options.include_usage produces a usage chunk", async () => {
-		const model = getCheapestModel();
-		if (model === undefined) return;
+    expect(chunkCount).toBeGreaterThan(0)
+    expect(lastFinishReason).not.toBeNull()
+  })
 
-		const { app } = setup();
-		const client = createTestClient(app);
+  test('stream_options.include_usage produces a usage chunk', async () => {
+    const model = getCheapestModel()
+    if (model === undefined) return
 
-		const stream = await client.chat.completions.create({
-			model: model.id,
-			messages: [{ role: "user", content: "Reply with exactly: hi" }],
-			max_completion_tokens: 16,
-			stream: true,
-			stream_options: { include_usage: true },
-		});
+    const { app } = setup()
+    const client = createTestClient(app)
 
-		const usages: OpenAI.CompletionUsage[] = [];
+    const stream = await client.chat.completions.create({
+      model: model.id,
+      messages: [{ role: 'user', content: 'Reply with exactly: hi' }],
+      max_completion_tokens: 16,
+      stream: true,
+      stream_options: { include_usage: true }
+    })
 
-		for await (const chunk of stream) {
-			if (chunk.usage !== undefined && chunk.usage !== null) {
-				usages.push(chunk.usage);
-			}
-		}
+    const usages: OpenAI.CompletionUsage[] = []
 
-		expect(usages.length).toBeGreaterThan(0);
-		for (const usage of usages) {
-			expect(usage.prompt_tokens).toBeTypeOf("number");
-			expect(usage.completion_tokens).toBeTypeOf("number");
-			expect(usage.total_tokens).toBeTypeOf("number");
-		}
-	});
-});
+    for await (const chunk of stream) {
+      if (chunk.usage !== undefined && chunk.usage !== null) {
+        usages.push(chunk.usage)
+      }
+    }
+
+    expect(usages.length).toBeGreaterThan(0)
+    for (const usage of usages) {
+      expect(usage.prompt_tokens).toBeTypeOf('number')
+      expect(usage.completion_tokens).toBeTypeOf('number')
+      expect(usage.total_tokens).toBeTypeOf('number')
+    }
+  })
+})

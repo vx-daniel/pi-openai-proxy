@@ -7,58 +7,58 @@
  * - Convert tool_choice to pi-compatible format
  */
 
-import type { Tool } from "@earendil-works/pi-ai";
-import { type TSchema, Type } from "typebox";
-import { jsonSchemaToTypebox } from "@proxy/openai/json-schema-to-typebox";
-import type { OpenAIFunctionTool } from "@proxy/openai/schemas";
+import type { Tool } from '@earendil-works/pi-ai'
+import { jsonSchemaToTypebox } from '@proxy/openai/json-schema-to-typebox'
+import type { OpenAIFunctionTool } from '@proxy/openai/schemas'
+import { type TSchema, Type } from 'typebox'
 
 export interface ToolConversionSuccess {
-	readonly ok: true;
-	readonly tools: Tool[];
+  readonly ok: true
+  readonly tools: Tool[]
 }
 
 export interface ToolConversionError {
-	readonly ok: false;
-	readonly message: string;
-	readonly param: string;
+  readonly ok: false
+  readonly message: string
+  readonly param: string
 }
 
-export type ToolConversionResult = ToolConversionSuccess | ToolConversionError;
+export type ToolConversionResult = ToolConversionSuccess | ToolConversionError
 
 /**
  * Convert an array of OpenAI function tool definitions to pi Tool definitions.
  */
 export function convertTools(openaiTools: OpenAIFunctionTool[]): ToolConversionResult {
-	const piTools: Tool[] = [];
+  const piTools: Tool[] = []
 
-	for (let i = 0; i < openaiTools.length; i++) {
-		const tool = openaiTools[i];
-		if (tool === undefined) continue;
+  for (let i = 0; i < openaiTools.length; i++) {
+    const tool = openaiTools[i]
+    if (tool === undefined) continue
 
-		const fn = tool.function;
-		let parameters: TSchema;
+    const fn = tool.function
+    let parameters: TSchema
 
-		if (fn.parameters === undefined) {
-			// No parameters specified -- empty object
-			parameters = Type.Object({});
-		} else {
-			const result = jsonSchemaToTypebox(fn.parameters, `tools[${String(i)}].function.parameters`);
-			if (!result.ok) {
-				return {
-					ok: false,
-					message: result.message,
-					param: result.path,
-				};
-			}
-			parameters = result.schema;
-		}
+    if (fn.parameters === undefined) {
+      // No parameters specified -- empty object
+      parameters = Type.Object({})
+    } else {
+      const result = jsonSchemaToTypebox(fn.parameters, `tools[${String(i)}].function.parameters`)
+      if (!result.ok) {
+        return {
+          ok: false,
+          message: result.message,
+          param: result.path
+        }
+      }
+      parameters = result.schema
+    }
 
-		piTools.push({
-			name: fn.name,
-			description: fn.description ?? "",
-			parameters,
-		});
-	}
+    piTools.push({
+      name: fn.name,
+      description: fn.description ?? '',
+      parameters
+    })
+  }
 
-	return { ok: true, tools: piTools };
+  return { ok: true, tools: piTools }
 }

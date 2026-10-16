@@ -24,159 +24,159 @@
  * - if/then/else
  */
 
-import { type TSchema, Type } from "typebox";
-import { isRecord } from "@proxy/utils/guards";
+import { isRecord } from '@proxy/utils/guards'
+import { type TSchema, Type } from 'typebox'
 
 export interface SchemaConversionSuccess {
-	readonly ok: true;
-	readonly schema: TSchema;
+  readonly ok: true
+  readonly schema: TSchema
 }
 
 export interface SchemaConversionError {
-	readonly ok: false;
-	readonly message: string;
-	readonly path: string;
+  readonly ok: false
+  readonly message: string
+  readonly path: string
 }
 
-export type SchemaConversionResult = SchemaConversionSuccess | SchemaConversionError;
+export type SchemaConversionResult = SchemaConversionSuccess | SchemaConversionError
 
 /**
  * Unsupported JSON Schema keywords that we reject explicitly.
  * Note: `anyOf` is handled separately for common patterns (nullable types, simple unions).
  */
 const REJECTED_KEYWORDS = [
-	"$ref",
-	"oneOf",
-	"allOf",
-	"if",
-	"then",
-	"else",
-	"patternProperties",
-	"not",
-] as const;
+  '$ref',
+  'oneOf',
+  'allOf',
+  'if',
+  'then',
+  'else',
+  'patternProperties',
+  'not'
+] as const
 
-const MAX_ANY_OF_BRANCHES = 10;
-const NULLABLE_TYPE_ARRAY_LENGTH = 2;
+const MAX_ANY_OF_BRANCHES = 10
+const NULLABLE_TYPE_ARRAY_LENGTH = 2
 
 /**
  * Convert a JSON Schema object to a TypeBox TSchema.
  *
  * Returns a ConversionError for unsupported constructs.
  */
-export function jsonSchemaToTypebox(schema: unknown, path = ""): SchemaConversionResult {
-	if (!isRecord(schema)) {
-		return {
-			ok: false,
-			message: "Schema must be an object",
-			path,
-		};
-	}
+export function jsonSchemaToTypebox(schema: unknown, path = ''): SchemaConversionResult {
+  if (!isRecord(schema)) {
+    return {
+      ok: false,
+      message: 'Schema must be an object',
+      path
+    }
+  }
 
-	const rejected = findRejectedKeyword(schema, path);
-	if (rejected !== undefined) {
-		return rejected;
-	}
+  const rejected = findRejectedKeyword(schema, path)
+  if (rejected !== undefined) {
+    return rejected
+  }
 
-	const description = typeof schema["description"] === "string" ? schema["description"] : undefined;
-	const opts: Record<string, unknown> = {};
-	if (description !== undefined) {
-		opts["description"] = description;
-	}
+  const description = typeof schema['description'] === 'string' ? schema['description'] : undefined
+  const opts: Record<string, unknown> = {}
+  if (description !== undefined) {
+    opts['description'] = description
+  }
 
-	// Handle anyOf: common patterns like nullable types and simple type unions.
-	// Example: anyOf: [{type: "string"}, {type: "null"}] -> Union(String, Null)
-	const anyOf = schema["anyOf"];
-	if (Array.isArray(anyOf)) {
-		return convertAnyOf(anyOf, path, opts);
-	}
+  // Handle anyOf: common patterns like nullable types and simple type unions.
+  // Example: anyOf: [{type: "string"}, {type: "null"}] -> Union(String, Null)
+  const anyOf = schema['anyOf']
+  if (Array.isArray(anyOf)) {
+    return convertAnyOf(anyOf, path, opts)
+  }
 
-	// Handle enum
-	const enumValues = schema["enum"];
-	if (Array.isArray(enumValues)) {
-		return convertEnum(enumValues, path, opts);
-	}
+  // Handle enum
+  const enumValues = schema['enum']
+  if (Array.isArray(enumValues)) {
+    return convertEnum(enumValues, path, opts)
+  }
 
-	// Determine the type
-	const rawType = schema["type"];
+  // Determine the type
+  const rawType = schema['type']
 
-	// Handle nullable via type: [T, "null"]
-	if (Array.isArray(rawType)) {
-		return convertNullableType(rawType, schema, path, opts);
-	}
+  // Handle nullable via type: [T, "null"]
+  if (Array.isArray(rawType)) {
+    return convertNullableType(rawType, schema, path, opts)
+  }
 
-	if (typeof rawType !== "string") {
-		return convertUntyped(schema, description, path, opts);
-	}
+  if (typeof rawType !== 'string') {
+    return convertUntyped(schema, description, path, opts)
+  }
 
-	return convertTyped(rawType, schema, path, opts);
+  return convertTyped(rawType, schema, path, opts)
 }
 
 function findRejectedKeyword(
-	schema: Record<string, unknown>,
-	path: string,
+  schema: Record<string, unknown>,
+  path: string
 ): SchemaConversionResult | undefined {
-	for (const keyword of REJECTED_KEYWORDS) {
-		if (schema[keyword] !== undefined) {
-			return {
-				ok: false,
-				message: `Unsupported JSON Schema keyword '${keyword}' at ${path || "root"}`,
-				path,
-			};
-		}
-	}
-	return undefined;
+  for (const keyword of REJECTED_KEYWORDS) {
+    if (schema[keyword] !== undefined) {
+      return {
+        ok: false,
+        message: `Unsupported JSON Schema keyword '${keyword}' at ${path || 'root'}`,
+        path
+      }
+    }
+  }
+  return undefined
 }
 
 /**
  * No type specified -- treat as an unconstrained schema if it's an empty object.
  */
 function convertUntyped(
-	schema: Record<string, unknown>,
-	description: string | undefined,
-	path: string,
-	opts: Record<string, unknown>,
+  schema: Record<string, unknown>,
+  description: string | undefined,
+  path: string,
+  opts: Record<string, unknown>
 ): SchemaConversionResult {
-	if (
-		Object.keys(schema).length === 0 ||
-		(Object.keys(schema).length === 1 && description !== undefined)
-	) {
-		return { ok: true, schema: Type.Unknown(opts) };
-	}
-	return {
-		ok: false,
-		message: `Missing or invalid 'type' at ${path || "root"}`,
-		path,
-	};
+  if (
+    Object.keys(schema).length === 0 ||
+    (Object.keys(schema).length === 1 && description !== undefined)
+  ) {
+    return { ok: true, schema: Type.Unknown(opts) }
+  }
+  return {
+    ok: false,
+    message: `Missing or invalid 'type' at ${path || 'root'}`,
+    path
+  }
 }
 
 function convertTyped(
-	rawType: string,
-	schema: Record<string, unknown>,
-	path: string,
-	opts: Record<string, unknown>,
+  rawType: string,
+  schema: Record<string, unknown>,
+  path: string,
+  opts: Record<string, unknown>
 ): SchemaConversionResult {
-	switch (rawType) {
-		case "object":
-			return convertObject(schema, path, opts);
-		case "string":
-			return { ok: true, schema: Type.String(opts) };
-		case "number":
-			return { ok: true, schema: Type.Number(opts) };
-		case "integer":
-			return { ok: true, schema: Type.Integer(opts) };
-		case "boolean":
-			return { ok: true, schema: Type.Boolean(opts) };
-		case "null":
-			return { ok: true, schema: Type.Null(opts) };
-		case "array":
-			return convertArray(schema, path, opts);
-		default:
-			return {
-				ok: false,
-				message: `Unsupported type '${rawType}' at ${path || "root"}`,
-				path,
-			};
-	}
+  switch (rawType) {
+    case 'object':
+      return convertObject(schema, path, opts)
+    case 'string':
+      return { ok: true, schema: Type.String(opts) }
+    case 'number':
+      return { ok: true, schema: Type.Number(opts) }
+    case 'integer':
+      return { ok: true, schema: Type.Integer(opts) }
+    case 'boolean':
+      return { ok: true, schema: Type.Boolean(opts) }
+    case 'null':
+      return { ok: true, schema: Type.Null(opts) }
+    case 'array':
+      return convertArray(schema, path, opts)
+    default:
+      return {
+        ok: false,
+        message: `Unsupported type '${rawType}' at ${path || 'root'}`,
+        path
+      }
+  }
 }
 
 /**
@@ -187,171 +187,171 @@ function convertTyped(
  * - Simple unions of supported types (max 10 branches)
  */
 function convertAnyOf(
-	branches: unknown[],
-	path: string,
-	opts: Record<string, unknown>,
+  branches: unknown[],
+  path: string,
+  opts: Record<string, unknown>
 ): SchemaConversionResult {
-	if (branches.length === 0) {
-		return { ok: false, message: `Empty 'anyOf' at ${path || "root"}`, path };
-	}
-	if (branches.length > MAX_ANY_OF_BRANCHES) {
-		return {
-			ok: false,
-			message: `'anyOf' with more than 10 branches is not supported at ${path || "root"}`,
-			path,
-		};
-	}
+  if (branches.length === 0) {
+    return { ok: false, message: `Empty 'anyOf' at ${path || 'root'}`, path }
+  }
+  if (branches.length > MAX_ANY_OF_BRANCHES) {
+    return {
+      ok: false,
+      message: `'anyOf' with more than 10 branches is not supported at ${path || 'root'}`,
+      path
+    }
+  }
 
-	const converted: TSchema[] = [];
-	for (let i = 0; i < branches.length; i++) {
-		const branchPath = `${path || "root"}.anyOf[${String(i)}]`;
-		const result = jsonSchemaToTypebox(branches[i], branchPath);
-		if (!result.ok) {
-			return result;
-		}
-		converted.push(result.schema);
-	}
+  const converted: TSchema[] = []
+  for (let i = 0; i < branches.length; i++) {
+    const branchPath = `${path || 'root'}.anyOf[${String(i)}]`
+    const result = jsonSchemaToTypebox(branches[i], branchPath)
+    if (!result.ok) {
+      return result
+    }
+    converted.push(result.schema)
+  }
 
-	return { ok: true, schema: Type.Union(converted, opts) };
+  return { ok: true, schema: Type.Union(converted, opts) }
 }
 
 function convertEnum(
-	values: unknown[],
-	path: string,
-	opts: Record<string, unknown>,
+  values: unknown[],
+  path: string,
+  opts: Record<string, unknown>
 ): SchemaConversionResult {
-	const stringValues: string[] = [];
-	for (const v of values) {
-		if (typeof v !== "string") {
-			return {
-				ok: false,
-				message: `Only string enums are supported at ${path || "root"}`,
-				path,
-			};
-		}
-		stringValues.push(v);
-	}
-	if (stringValues.length === 0) {
-		return {
-			ok: false,
-			message: `Empty enum at ${path || "root"}`,
-			path,
-		};
-	}
-	// Use Type.Union of literals for string enums
-	const literals = stringValues.map((v) => Type.Literal(v));
-	return { ok: true, schema: Type.Union(literals, opts) };
+  const stringValues: string[] = []
+  for (const v of values) {
+    if (typeof v !== 'string') {
+      return {
+        ok: false,
+        message: `Only string enums are supported at ${path || 'root'}`,
+        path
+      }
+    }
+    stringValues.push(v)
+  }
+  if (stringValues.length === 0) {
+    return {
+      ok: false,
+      message: `Empty enum at ${path || 'root'}`,
+      path
+    }
+  }
+  // Use Type.Union of literals for string enums
+  const literals = stringValues.map((v) => Type.Literal(v))
+  return { ok: true, schema: Type.Union(literals, opts) }
 }
 
 function convertNullableType(
-	typeArray: unknown[],
-	schema: Record<string, unknown>,
-	path: string,
-	opts: Record<string, unknown>,
+  typeArray: unknown[],
+  schema: Record<string, unknown>,
+  path: string,
+  opts: Record<string, unknown>
 ): SchemaConversionResult {
-	const nonNullTypes = typeArray.filter((t) => t !== "null");
-	if (nonNullTypes.length !== 1 || typeArray.length !== NULLABLE_TYPE_ARRAY_LENGTH) {
-		return {
-			ok: false,
-			message: `Only [type, "null"] nullable types are supported at ${path || "root"}`,
-			path,
-		};
-	}
+  const nonNullTypes = typeArray.filter((t) => t !== 'null')
+  if (nonNullTypes.length !== 1 || typeArray.length !== NULLABLE_TYPE_ARRAY_LENGTH) {
+    return {
+      ok: false,
+      message: `Only [type, "null"] nullable types are supported at ${path || 'root'}`,
+      path
+    }
+  }
 
-	const innerType = nonNullTypes[0];
-	if (typeof innerType !== "string") {
-		return {
-			ok: false,
-			message: `Invalid nullable type at ${path || "root"}`,
-			path,
-		};
-	}
+  const innerType = nonNullTypes[0]
+  if (typeof innerType !== 'string') {
+    return {
+      ok: false,
+      message: `Invalid nullable type at ${path || 'root'}`,
+      path
+    }
+  }
 
-	// Recurse with the inner type
-	const innerSchema = { ...schema, type: innerType };
-	const innerResult = jsonSchemaToTypebox(innerSchema, path);
-	if (!innerResult.ok) {
-		return innerResult;
-	}
+  // Recurse with the inner type
+  const innerSchema = { ...schema, type: innerType }
+  const innerResult = jsonSchemaToTypebox(innerSchema, path)
+  if (!innerResult.ok) {
+    return innerResult
+  }
 
-	return { ok: true, schema: Type.Union([innerResult.schema, Type.Null()], opts) };
+  return { ok: true, schema: Type.Union([innerResult.schema, Type.Null()], opts) }
 }
 
 function convertObject(
-	schema: Record<string, unknown>,
-	path: string,
-	opts: Record<string, unknown>,
+  schema: Record<string, unknown>,
+  path: string,
+  opts: Record<string, unknown>
 ): SchemaConversionResult {
-	const rawProperties = schema["properties"];
-	const rawRequired = schema["required"];
-	const additionalProperties = schema["additionalProperties"];
+  const rawProperties = schema['properties']
+  const rawRequired = schema['required']
+  const additionalProperties = schema['additionalProperties']
 
-	// Reject additionalProperties when it's a schema object (boolean is allowed)
-	if (additionalProperties !== undefined && typeof additionalProperties !== "boolean") {
-		return {
-			ok: false,
-			message: `'additionalProperties' as a schema is not supported at ${path || "root"}; only boolean values are allowed`,
-			path,
-		};
-	}
+  // Reject additionalProperties when it's a schema object (boolean is allowed)
+  if (additionalProperties !== undefined && typeof additionalProperties !== 'boolean') {
+    return {
+      ok: false,
+      message: `'additionalProperties' as a schema is not supported at ${path || 'root'}; only boolean values are allowed`,
+      path
+    }
+  }
 
-	// Object with no properties -- just return an empty object type
-	if (rawProperties === undefined) {
-		return { ok: true, schema: Type.Object({}, opts) };
-	}
+  // Object with no properties -- just return an empty object type
+  if (rawProperties === undefined) {
+    return { ok: true, schema: Type.Object({}, opts) }
+  }
 
-	if (!isRecord(rawProperties)) {
-		return {
-			ok: false,
-			message: `'properties' must be an object at ${path || "root"}`,
-			path,
-		};
-	}
+  if (!isRecord(rawProperties)) {
+    return {
+      ok: false,
+      message: `'properties' must be an object at ${path || 'root'}`,
+      path
+    }
+  }
 
-	const requiredSet = new Set<string>();
-	if (Array.isArray(rawRequired)) {
-		for (const r of rawRequired) {
-			if (typeof r === "string") {
-				requiredSet.add(r);
-			}
-		}
-	}
+  const requiredSet = new Set<string>()
+  if (Array.isArray(rawRequired)) {
+    for (const r of rawRequired) {
+      if (typeof r === 'string') {
+        requiredSet.add(r)
+      }
+    }
+  }
 
-	const typeboxProperties: Record<string, TSchema> = {};
+  const typeboxProperties: Record<string, TSchema> = {}
 
-	for (const [key, propSchema] of Object.entries(rawProperties)) {
-		const propPath = path.length > 0 ? `${path}.${key}` : key;
-		const result = jsonSchemaToTypebox(propSchema, propPath);
-		if (!result.ok) {
-			return result;
-		}
+  for (const [key, propSchema] of Object.entries(rawProperties)) {
+    const propPath = path.length > 0 ? `${path}.${key}` : key
+    const result = jsonSchemaToTypebox(propSchema, propPath)
+    if (!result.ok) {
+      return result
+    }
 
-		if (requiredSet.has(key)) {
-			typeboxProperties[key] = result.schema;
-		} else {
-			typeboxProperties[key] = Type.Optional(result.schema);
-		}
-	}
+    if (requiredSet.has(key)) {
+      typeboxProperties[key] = result.schema
+    } else {
+      typeboxProperties[key] = Type.Optional(result.schema)
+    }
+  }
 
-	return { ok: true, schema: Type.Object(typeboxProperties, opts) };
+  return { ok: true, schema: Type.Object(typeboxProperties, opts) }
 }
 
 function convertArray(
-	schema: Record<string, unknown>,
-	path: string,
-	opts: Record<string, unknown>,
+  schema: Record<string, unknown>,
+  path: string,
+  opts: Record<string, unknown>
 ): SchemaConversionResult {
-	const items = schema["items"];
-	if (items === undefined) {
-		// Array with no items schema -- allow any items
-		return { ok: true, schema: Type.Array(Type.Unknown(), opts) };
-	}
+  const items = schema['items']
+  if (items === undefined) {
+    // Array with no items schema -- allow any items
+    return { ok: true, schema: Type.Array(Type.Unknown(), opts) }
+  }
 
-	const itemPath = path.length > 0 ? `${path}.items` : "items";
-	const itemResult = jsonSchemaToTypebox(items, itemPath);
-	if (!itemResult.ok) {
-		return itemResult;
-	}
+  const itemPath = path.length > 0 ? `${path}.items` : 'items'
+  const itemResult = jsonSchemaToTypebox(items, itemPath)
+  if (!itemResult.ok) {
+    return itemResult
+  }
 
-	return { ok: true, schema: Type.Array(itemResult.schema, opts) };
+  return { ok: true, schema: Type.Array(itemResult.schema, opts) }
 }

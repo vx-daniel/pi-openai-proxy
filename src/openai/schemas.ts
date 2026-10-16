@@ -13,94 +13,94 @@
  *   functions (deprecated), function_call (deprecated)
  */
 
-import * as z from "zod";
+import * as z from 'zod'
 
 // --- Message content parts ---
 
 const textContentPartSchema = z.object({
-	type: z.literal("text"),
-	text: z.string().trim(),
-});
+  type: z.literal('text'),
+  text: z.string().trim()
+})
 
 const imageUrlContentPartSchema = z.object({
-	type: z.literal("image_url"),
-	image_url: z.object({
-		url: z.string().trim(),
-		detail: z.enum(["auto", "low", "high"]).optional(),
-	}),
-});
+  type: z.literal('image_url'),
+  image_url: z.object({
+    url: z.string().trim(),
+    detail: z.enum(['auto', 'low', 'high']).optional()
+  })
+})
 
-const contentPartSchema = z.discriminatedUnion("type", [
-	textContentPartSchema,
-	imageUrlContentPartSchema,
-]);
+const contentPartSchema = z.discriminatedUnion('type', [
+  textContentPartSchema,
+  imageUrlContentPartSchema
+])
 
 // --- Messages ---
 
 const systemMessageSchema = z.object({
-	role: z.literal("system"),
-	content: z.string().trim(),
-	name: z.string().trim().optional(),
-});
+  role: z.literal('system'),
+  content: z.string().trim(),
+  name: z.string().trim().optional()
+})
 
 const developerMessageSchema = z.object({
-	role: z.literal("developer"),
-	content: z.string().trim(),
-	name: z.string().trim().optional(),
-});
+  role: z.literal('developer'),
+  content: z.string().trim(),
+  name: z.string().trim().optional()
+})
 
 const userMessageTextSchema = z.object({
-	role: z.literal("user"),
-	content: z.string().trim(),
-	name: z.string().trim().optional(),
-});
+  role: z.literal('user'),
+  content: z.string().trim(),
+  name: z.string().trim().optional()
+})
 
 const userMessagePartsSchema = z.object({
-	role: z.literal("user"),
-	content: z.array(contentPartSchema),
-	name: z.string().trim().optional(),
-});
+  role: z.literal('user'),
+  content: z.array(contentPartSchema),
+  name: z.string().trim().optional()
+})
 
 const assistantMessageSchema = z.object({
-	role: z.literal("assistant"),
-	content: z.string().trim().nullable().optional(),
-	name: z.string().trim().optional(),
-	tool_calls: z
-		.array(
-			z.object({
-				id: z.string().trim(),
-				type: z.literal("function"),
-				function: z.object({
-					name: z.string().trim(),
-					arguments: z.string().trim(),
-				}),
-			}),
-		)
-		.optional(),
-});
+  role: z.literal('assistant'),
+  content: z.string().trim().nullable().optional(),
+  name: z.string().trim().optional(),
+  tool_calls: z
+    .array(
+      z.object({
+        id: z.string().trim(),
+        type: z.literal('function'),
+        function: z.object({
+          name: z.string().trim(),
+          arguments: z.string().trim()
+        })
+      })
+    )
+    .optional()
+})
 
 const toolMessageSchema = z.object({
-	role: z.literal("tool"),
-	content: z.string().trim(),
-	tool_call_id: z.string().trim(),
-});
+  role: z.literal('tool'),
+  content: z.string().trim(),
+  tool_call_id: z.string().trim()
+})
 
 const messageSchema = z.union([
-	systemMessageSchema,
-	developerMessageSchema,
-	userMessageTextSchema,
-	userMessagePartsSchema,
-	assistantMessageSchema,
-	toolMessageSchema,
-]);
+  systemMessageSchema,
+  developerMessageSchema,
+  userMessageTextSchema,
+  userMessagePartsSchema,
+  assistantMessageSchema,
+  toolMessageSchema
+])
 
-export type OpenAIMessage = z.infer<typeof messageSchema>;
+export type OpenAIMessage = z.infer<typeof messageSchema>
 
 // --- Stream options ---
 
 const streamOptionsSchema = z.object({
-	include_usage: z.boolean().optional(),
-});
+  include_usage: z.boolean().optional()
+})
 
 // --- Function tool definition ---
 
@@ -110,16 +110,16 @@ const streamOptionsSchema = z.object({
  * semantic conversion to TypeBox happens in json-schema-to-typebox.ts.
  */
 const functionToolSchema = z.object({
-	type: z.literal("function"),
-	function: z.object({
-		name: z.string().trim(),
-		description: z.string().trim().optional(),
-		parameters: z.record(z.string().trim(), z.unknown()).optional(),
-		strict: z.boolean().nullable().optional(),
-	}),
-});
+  type: z.literal('function'),
+  function: z.object({
+    name: z.string().trim(),
+    description: z.string().trim().optional(),
+    parameters: z.record(z.string().trim(), z.unknown()).optional(),
+    strict: z.boolean().nullable().optional()
+  })
+})
 
-export type OpenAIFunctionTool = z.infer<typeof functionToolSchema>;
+export type OpenAIFunctionTool = z.infer<typeof functionToolSchema>
 
 // --- Tool choice ---
 
@@ -127,81 +127,81 @@ export type OpenAIFunctionTool = z.infer<typeof functionToolSchema>;
  * OpenAI tool_choice: "none" | "auto" | "required" | { type: "function", function: { name: string } }
  */
 const namedToolChoiceSchema = z.object({
-	type: z.literal("function"),
-	function: z.object({
-		name: z.string().trim(),
-	}),
-});
+  type: z.literal('function'),
+  function: z.object({
+    name: z.string().trim()
+  })
+})
 
-const toolChoiceSchema = z.union([z.enum(["none", "auto", "required"]), namedToolChoiceSchema]);
+const toolChoiceSchema = z.union([z.enum(['none', 'auto', 'required']), namedToolChoiceSchema])
 
-export type ToolChoice = z.infer<typeof toolChoiceSchema>;
+export type ToolChoice = z.infer<typeof toolChoiceSchema>
 
 // --- Response format ---
 
 const jsonSchemaResponseFormatSchema = z.object({
-	type: z.literal("json_schema"),
-	json_schema: z.object({
-		name: z.string().trim(),
-		description: z.string().trim().optional(),
-		schema: z.record(z.string().trim(), z.unknown()).optional(),
-		strict: z.boolean().nullable().optional(),
-	}),
-});
+  type: z.literal('json_schema'),
+  json_schema: z.object({
+    name: z.string().trim(),
+    description: z.string().trim().optional(),
+    schema: z.record(z.string().trim(), z.unknown()).optional(),
+    strict: z.boolean().nullable().optional()
+  })
+})
 
-const responseFormatSchema = z.discriminatedUnion("type", [
-	z.object({ type: z.literal("text") }),
-	z.object({ type: z.literal("json_object") }),
-	jsonSchemaResponseFormatSchema,
-]);
+const responseFormatSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('text') }),
+  z.object({ type: z.literal('json_object') }),
+  jsonSchemaResponseFormatSchema
+])
 
-export type ResponseFormat = z.infer<typeof responseFormatSchema>;
+export type ResponseFormat = z.infer<typeof responseFormatSchema>
 
-const MAX_TEMPERATURE = 2;
-const MAX_STOP_SEQUENCES = 4;
-const MIN_PENALTY = -2;
-const MAX_PENALTY = 2;
+const MAX_TEMPERATURE = 2
+const MAX_STOP_SEQUENCES = 4
+const MIN_PENALTY = -2
+const MAX_PENALTY = 2
 
 // --- Top-level request ---
 
 export const chatCompletionRequestSchema = z
-	.object({
-		model: z.string().trim(),
-		messages: z.array(messageSchema).min(1),
-		stream: z.boolean().optional(),
-		temperature: z.number().min(0).max(MAX_TEMPERATURE).optional(),
-		max_tokens: z.int().positive().optional(),
-		max_completion_tokens: z.int().positive().optional(),
-		stop: z
-			.union([z.string().trim(), z.array(z.string().trim()).max(MAX_STOP_SEQUENCES)])
-			.optional(),
-		user: z.string().trim().optional(),
-		stream_options: streamOptionsSchema.nullable().optional(),
-		// Phase 2 additions
-		tools: z.array(functionToolSchema).optional(),
-		tool_choice: toolChoiceSchema.optional(),
-		parallel_tool_calls: z.boolean().optional(),
-		reasoning_effort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]).optional(),
-		top_p: z.number().min(0).max(1).optional(),
-		frequency_penalty: z.number().min(MIN_PENALTY).max(MAX_PENALTY).optional(),
-		presence_penalty: z.number().min(MIN_PENALTY).max(MAX_PENALTY).optional(),
-		seed: z.int().optional(),
-		response_format: responseFormatSchema.optional(),
-		// Phase 3D additions — passthrough fields sent by real clients
-		metadata: z.record(z.string().trim(), z.unknown()).optional(),
-		prediction: z
-			.object({
-				type: z.literal("content"),
-				content: z.union([
-					z.string().trim(),
-					z.array(z.object({ type: z.literal("text"), text: z.string().trim() })),
-				]),
-			})
-			.optional(),
-	})
-	.strict();
+  .object({
+    model: z.string().trim(),
+    messages: z.array(messageSchema).min(1),
+    stream: z.boolean().optional(),
+    temperature: z.number().min(0).max(MAX_TEMPERATURE).optional(),
+    max_tokens: z.int().positive().optional(),
+    max_completion_tokens: z.int().positive().optional(),
+    stop: z
+      .union([z.string().trim(), z.array(z.string().trim()).max(MAX_STOP_SEQUENCES)])
+      .optional(),
+    user: z.string().trim().optional(),
+    stream_options: streamOptionsSchema.nullable().optional(),
+    // Phase 2 additions
+    tools: z.array(functionToolSchema).optional(),
+    tool_choice: toolChoiceSchema.optional(),
+    parallel_tool_calls: z.boolean().optional(),
+    reasoning_effort: z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh']).optional(),
+    top_p: z.number().min(0).max(1).optional(),
+    frequency_penalty: z.number().min(MIN_PENALTY).max(MAX_PENALTY).optional(),
+    presence_penalty: z.number().min(MIN_PENALTY).max(MAX_PENALTY).optional(),
+    seed: z.int().optional(),
+    response_format: responseFormatSchema.optional(),
+    // Phase 3D additions — passthrough fields sent by real clients
+    metadata: z.record(z.string().trim(), z.unknown()).optional(),
+    prediction: z
+      .object({
+        type: z.literal('content'),
+        content: z.union([
+          z.string().trim(),
+          z.array(z.object({ type: z.literal('text'), text: z.string().trim() }))
+        ])
+      })
+      .optional()
+  })
+  .strict()
 
-export type ChatCompletionRequest = z.infer<typeof chatCompletionRequestSchema>;
+export type ChatCompletionRequest = z.infer<typeof chatCompletionRequestSchema>
 
 // --- Rejected fields ---
 
@@ -216,10 +216,10 @@ export type ChatCompletionRequest = z.infer<typeof chatCompletionRequestSchema>;
  * and `tool_choice`. Clients should migrate to the current API.
  */
 export const rejectedFields = [
-	"n",
-	"logprobs",
-	"top_logprobs",
-	"logit_bias",
-	"functions",
-	"function_call",
-] as const;
+  'n',
+  'logprobs',
+  'top_logprobs',
+  'logit_bias',
+  'functions',
+  'function_call'
+] as const

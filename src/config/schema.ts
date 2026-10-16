@@ -6,17 +6,11 @@
  * The pi extension reads and writes the JSON config file via the /proxy config panel.
  */
 
-import {
-	existsSync,
-	mkdirSync,
-	readFileSync,
-	renameSync,
-	unlinkSync,
-	writeFileSync,
-} from "node:fs";
-import { dirname, resolve } from "node:path";
-import * as z from "zod";
-import { isRecord } from "@proxy/utils/guards";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+
+import { isRecord } from '@proxy/utils/guards'
+import * as z from 'zod'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,7 +23,7 @@ import { isRecord } from "@proxy/utils/guards";
  * - "universal": expose raw model IDs only; duplicates are a config error
  * - "always-prefixed": always expose <prefix>/<model-id> for every model
  */
-export type PublicModelIdMode = "collision-prefixed" | "universal" | "always-prefixed";
+export type PublicModelIdMode = 'collision-prefixed' | 'universal' | 'always-prefixed'
 
 /**
  * Which models are exposed on the public HTTP API.
@@ -40,164 +34,164 @@ export type PublicModelIdMode = "collision-prefixed" | "universal" | "always-pre
  * - "custom": same per-model filtering as "scoped" but independently managed
  *   via the proxy's own `customModels` config
  */
-export type ModelExposureMode = "all" | "scoped" | "custom";
+export type ModelExposureMode = 'all' | 'scoped' | 'custom'
 
 export interface ProxyConfig {
-	/** Bind address. Default: "127.0.0.1" */
-	readonly host: string;
-	/** Listen port. Default: 4141 */
-	readonly port: number;
-	/** Bearer token for proxy auth. Empty string = disabled. */
-	readonly authToken: string;
-	/** Allow remote image URL fetching. Default: false */
-	readonly remoteImages: boolean;
-	/** Max request body in MB. Default: 50 */
-	readonly maxBodySizeMb: number;
-	/** Upstream timeout in seconds. Default: 120 */
-	readonly upstreamTimeoutSec: number;
-	/** "detached" = background daemon, "session" = dies with pi session. Default: "detached" */
-	readonly lifetime: "detached" | "session";
-	/** How public model IDs are generated. Default: "collision-prefixed" */
-	readonly publicModelIdMode: PublicModelIdMode;
-	/** Which models are exposed. Default: "scoped" */
-	readonly modelExposureMode: ModelExposureMode;
-	/** Canonical model IDs to expose when modelExposureMode is "custom". */
-	readonly customModels: readonly string[];
-	/** Provider key -> custom public prefix label. Default prefix = provider key. */
-	readonly providerPrefixes: Readonly<Record<string, string>>;
-	/** Zed editor sync settings. */
-	readonly zed: ZedSyncConfig;
+  /** Bind address. Default: "127.0.0.1" */
+  readonly host: string
+  /** Listen port. Default: 4141 */
+  readonly port: number
+  /** Bearer token for proxy auth. Empty string = disabled. */
+  readonly authToken: string
+  /** Allow remote image URL fetching. Default: false */
+  readonly remoteImages: boolean
+  /** Max request body in MB. Default: 50 */
+  readonly maxBodySizeMb: number
+  /** Upstream timeout in seconds. Default: 120 */
+  readonly upstreamTimeoutSec: number
+  /** "detached" = background daemon, "session" = dies with pi session. Default: "detached" */
+  readonly lifetime: 'detached' | 'session'
+  /** How public model IDs are generated. Default: "collision-prefixed" */
+  readonly publicModelIdMode: PublicModelIdMode
+  /** Which models are exposed. Default: "scoped" */
+  readonly modelExposureMode: ModelExposureMode
+  /** Canonical model IDs to expose when modelExposureMode is "custom". */
+  readonly customModels: readonly string[]
+  /** Provider key -> custom public prefix label. Default prefix = provider key. */
+  readonly providerPrefixes: Readonly<Record<string, string>>
+  /** Zed editor sync settings. */
+  readonly zed: ZedSyncConfig
 }
 
 const ZedSyncConfigSchema = z.object({
-	providerName: z
-		.string()
-		.trim()
-		.min(1, { error: "Provider name must not be empty" })
-		.default("Pi Proxy"),
-	autoSync: z.boolean({ error: "autoSync must be a boolean" }).default(false),
-});
+  providerName: z
+    .string()
+    .trim()
+    .min(1, { error: 'Provider name must not be empty' })
+    .default('Pi Proxy'),
+  autoSync: z.boolean({ error: 'autoSync must be a boolean' }).default(false)
+})
 
-export type ZedSyncConfig = z.infer<typeof ZedSyncConfigSchema>;
+export type ZedSyncConfig = z.infer<typeof ZedSyncConfigSchema>
 
 // ---------------------------------------------------------------------------
 // Defaults
 // ---------------------------------------------------------------------------
 
-export const BYTES_PER_MB = 1_048_576;
-export const MS_PER_SECOND = 1000;
+export const BYTES_PER_MB = 1_048_576
+export const MS_PER_SECOND = 1000
 
-const MAX_PORT = 65_535;
-const MAX_BODY_SIZE_MB = 500;
-const MIN_UPSTREAM_TIMEOUT_SEC = 5;
-const MAX_UPSTREAM_TIMEOUT_SEC = 600;
+const MAX_PORT = 65_535
+const MAX_BODY_SIZE_MB = 500
+const MIN_UPSTREAM_TIMEOUT_SEC = 5
+const MAX_UPSTREAM_TIMEOUT_SEC = 600
 
 export const DEFAULT_CONFIG: Readonly<ProxyConfig> = {
-	host: "127.0.0.1",
-	port: 4141,
-	authToken: "",
-	remoteImages: false,
-	maxBodySizeMb: 50,
-	upstreamTimeoutSec: 120,
-	lifetime: "detached",
-	publicModelIdMode: "collision-prefixed",
-	modelExposureMode: "scoped",
-	customModels: [],
-	providerPrefixes: {},
-	zed: {
-		providerName: "Pi Proxy",
-		autoSync: false,
-	},
-};
+  host: '127.0.0.1',
+  port: 4141,
+  authToken: '',
+  remoteImages: false,
+  maxBodySizeMb: 50,
+  upstreamTimeoutSec: 120,
+  lifetime: 'detached',
+  publicModelIdMode: 'collision-prefixed',
+  modelExposureMode: 'scoped',
+  customModels: [],
+  providerPrefixes: {},
+  zed: {
+    providerName: 'Pi Proxy',
+    autoSync: false
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Normalization
 // ---------------------------------------------------------------------------
 
 function clampInt(raw: unknown, min: number, max: number, fallback: number): number {
-	if (typeof raw !== "number" || !Number.isFinite(raw)) return fallback;
-	return Math.max(min, Math.min(max, Math.round(raw)));
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return fallback
+  return Math.max(min, Math.min(max, Math.round(raw)))
 }
 
 const VALID_PUBLIC_ID_MODES = new Set<string>([
-	"collision-prefixed",
-	"universal",
-	"always-prefixed",
-]);
+  'collision-prefixed',
+  'universal',
+  'always-prefixed'
+])
 
 export function isPublicModelIdMode(value: string): value is PublicModelIdMode {
-	return VALID_PUBLIC_ID_MODES.has(value);
+  return VALID_PUBLIC_ID_MODES.has(value)
 }
 
-const VALID_EXPOSURE_MODES = new Set<string>(["all", "scoped", "custom"]);
+const VALID_EXPOSURE_MODES = new Set<string>(['all', 'scoped', 'custom'])
 
 export function isModelExposureMode(value: string): value is ModelExposureMode {
-	return VALID_EXPOSURE_MODES.has(value);
+  return VALID_EXPOSURE_MODES.has(value)
 }
 
 function normalizeStringArray(raw: unknown): string[] {
-	if (!Array.isArray(raw)) return [];
-	const result: string[] = [];
-	for (const item of raw) {
-		if (typeof item === "string" && item.length > 0) {
-			result.push(item);
-		}
-	}
-	return result;
+  if (!Array.isArray(raw)) return []
+  const result: string[] = []
+  for (const item of raw) {
+    if (typeof item === 'string' && item.length > 0) {
+      result.push(item)
+    }
+  }
+  return result
 }
 
 function normalizeStringRecord(raw: unknown): Record<string, string> {
-	if (!isRecord(raw)) return {};
-	const result: Record<string, string> = {};
-	for (const [key, val] of Object.entries(raw)) {
-		if (typeof val === "string" && val.length > 0) {
-			result[key] = val;
-		}
-	}
-	return result;
+  if (!isRecord(raw)) return {}
+  const result: Record<string, string> = {}
+  for (const [key, val] of Object.entries(raw)) {
+    if (typeof val === 'string' && val.length > 0) {
+      result[key] = val
+    }
+  }
+  return result
 }
 
 export function normalizeConfig(raw: unknown): ProxyConfig {
-	const v = isRecord(raw) ? raw : {};
-	const rawHost = v["host"];
-	const rawAuthToken = v["authToken"];
-	const rawRemoteImages = v["remoteImages"];
-	const rawPublicIdMode = v["publicModelIdMode"];
-	const rawExposureMode = v["modelExposureMode"];
-	return {
-		host: typeof rawHost === "string" && rawHost.length > 0 ? rawHost : DEFAULT_CONFIG.host,
-		port: clampInt(v["port"], 1, MAX_PORT, DEFAULT_CONFIG.port),
-		authToken: typeof rawAuthToken === "string" ? rawAuthToken : DEFAULT_CONFIG.authToken,
-		remoteImages:
-			typeof rawRemoteImages === "boolean" ? rawRemoteImages : DEFAULT_CONFIG.remoteImages,
-		maxBodySizeMb: clampInt(v["maxBodySizeMb"], 1, MAX_BODY_SIZE_MB, DEFAULT_CONFIG.maxBodySizeMb),
-		upstreamTimeoutSec: clampInt(
-			v["upstreamTimeoutSec"],
-			MIN_UPSTREAM_TIMEOUT_SEC,
-			MAX_UPSTREAM_TIMEOUT_SEC,
-			DEFAULT_CONFIG.upstreamTimeoutSec,
-		),
-		lifetime: v["lifetime"] === "session" ? "session" : "detached",
-		publicModelIdMode:
-			typeof rawPublicIdMode === "string" && isPublicModelIdMode(rawPublicIdMode)
-				? rawPublicIdMode
-				: DEFAULT_CONFIG.publicModelIdMode,
-		modelExposureMode:
-			typeof rawExposureMode === "string" && isModelExposureMode(rawExposureMode)
-				? rawExposureMode
-				: DEFAULT_CONFIG.modelExposureMode,
-		customModels: normalizeStringArray(v["customModels"]),
-		providerPrefixes: normalizeStringRecord(v["providerPrefixes"]),
-		zed: parseZedSyncConfig(v["zed"]),
-	};
+  const v = isRecord(raw) ? raw : {}
+  const rawHost = v['host']
+  const rawAuthToken = v['authToken']
+  const rawRemoteImages = v['remoteImages']
+  const rawPublicIdMode = v['publicModelIdMode']
+  const rawExposureMode = v['modelExposureMode']
+  return {
+    host: typeof rawHost === 'string' && rawHost.length > 0 ? rawHost : DEFAULT_CONFIG.host,
+    port: clampInt(v['port'], 1, MAX_PORT, DEFAULT_CONFIG.port),
+    authToken: typeof rawAuthToken === 'string' ? rawAuthToken : DEFAULT_CONFIG.authToken,
+    remoteImages:
+      typeof rawRemoteImages === 'boolean' ? rawRemoteImages : DEFAULT_CONFIG.remoteImages,
+    maxBodySizeMb: clampInt(v['maxBodySizeMb'], 1, MAX_BODY_SIZE_MB, DEFAULT_CONFIG.maxBodySizeMb),
+    upstreamTimeoutSec: clampInt(
+      v['upstreamTimeoutSec'],
+      MIN_UPSTREAM_TIMEOUT_SEC,
+      MAX_UPSTREAM_TIMEOUT_SEC,
+      DEFAULT_CONFIG.upstreamTimeoutSec
+    ),
+    lifetime: v['lifetime'] === 'session' ? 'session' : 'detached',
+    publicModelIdMode:
+      typeof rawPublicIdMode === 'string' && isPublicModelIdMode(rawPublicIdMode)
+        ? rawPublicIdMode
+        : DEFAULT_CONFIG.publicModelIdMode,
+    modelExposureMode:
+      typeof rawExposureMode === 'string' && isModelExposureMode(rawExposureMode)
+        ? rawExposureMode
+        : DEFAULT_CONFIG.modelExposureMode,
+    customModels: normalizeStringArray(v['customModels']),
+    providerPrefixes: normalizeStringRecord(v['providerPrefixes']),
+    zed: parseZedSyncConfig(v['zed'])
+  }
 }
 
 function parseZedSyncConfig(raw: unknown): ZedSyncConfig {
-	const result = ZedSyncConfigSchema.safeParse(isRecord(raw) ? raw : {});
-	if (result.success) {
-		return result.data;
-	}
-	return ZedSyncConfigSchema.parse({});
+  const result = ZedSyncConfigSchema.safeParse(isRecord(raw) ? raw : {})
+  if (result.success) {
+    return result.data
+  }
+  return ZedSyncConfigSchema.parse({})
 }
 
 // ---------------------------------------------------------------------------
@@ -205,8 +199,8 @@ function parseZedSyncConfig(raw: unknown): ZedSyncConfig {
 // ---------------------------------------------------------------------------
 
 export function getConfigPath(): string {
-	const piDir = process.env.PI_CODING_AGENT_DIR ?? resolve(process.env.HOME ?? "~", ".pi", "agent");
-	return resolve(piDir, "proxy-config.json");
+  const piDir = process.env.PI_CODING_AGENT_DIR ?? resolve(process.env.HOME ?? '~', '.pi', 'agent')
+  return resolve(piDir, 'proxy-config.json')
 }
 
 // ---------------------------------------------------------------------------
@@ -214,26 +208,26 @@ export function getConfigPath(): string {
 // ---------------------------------------------------------------------------
 
 export function loadConfigFromFile(): ProxyConfig {
-	const p = getConfigPath();
-	if (!existsSync(p)) return { ...DEFAULT_CONFIG };
-	try {
-		return normalizeConfig(JSON.parse(readFileSync(p, "utf-8")));
-	} catch {
-		return { ...DEFAULT_CONFIG };
-	}
+  const p = getConfigPath()
+  if (!existsSync(p)) return { ...DEFAULT_CONFIG }
+  try {
+    return normalizeConfig(JSON.parse(readFileSync(p, 'utf-8')))
+  } catch {
+    return { ...DEFAULT_CONFIG }
+  }
 }
 
 export function saveConfigToFile(config: ProxyConfig): void {
-	const p = getConfigPath();
-	const normalized = normalizeConfig(config);
-	const tmp = `${p}.tmp`;
-	try {
-		mkdirSync(dirname(p), { recursive: true });
-		writeFileSync(tmp, `${JSON.stringify(normalized, null, "\t")}\n`, "utf-8");
-		renameSync(tmp, p);
-	} catch {
-		if (existsSync(tmp)) unlinkSync(tmp);
-	}
+  const p = getConfigPath()
+  const normalized = normalizeConfig(config)
+  const tmp = `${p}.tmp`
+  try {
+    mkdirSync(dirname(p), { recursive: true })
+    writeFileSync(tmp, `${JSON.stringify(normalized, null, '\t')}\n`, 'utf-8')
+    renameSync(tmp, p)
+  } catch {
+    if (existsSync(tmp)) unlinkSync(tmp)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -241,16 +235,16 @@ export function saveConfigToFile(config: ProxyConfig): void {
 // ---------------------------------------------------------------------------
 
 export function configToEnv(config: ProxyConfig): Record<string, string> {
-	const env: Record<string, string> = {};
-	env["PI_PROXY_HOST"] = config.host;
-	env["PI_PROXY_PORT"] = String(config.port);
-	if (config.authToken.length > 0) {
-		env["PI_PROXY_AUTH_TOKEN"] = config.authToken;
-	}
-	env["PI_PROXY_REMOTE_IMAGES"] = String(config.remoteImages);
-	env["PI_PROXY_MAX_BODY_SIZE"] = String(config.maxBodySizeMb * BYTES_PER_MB);
-	env["PI_PROXY_UPSTREAM_TIMEOUT_MS"] = String(config.upstreamTimeoutSec * MS_PER_SECOND);
-	// Model exposure settings are read from the shared JSON config file at startup.
-	// They are not passed as env vars because the proxy loads the config file directly.
-	return env;
+  const env: Record<string, string> = {}
+  env['PI_PROXY_HOST'] = config.host
+  env['PI_PROXY_PORT'] = String(config.port)
+  if (config.authToken.length > 0) {
+    env['PI_PROXY_AUTH_TOKEN'] = config.authToken
+  }
+  env['PI_PROXY_REMOTE_IMAGES'] = String(config.remoteImages)
+  env['PI_PROXY_MAX_BODY_SIZE'] = String(config.maxBodySizeMb * BYTES_PER_MB)
+  env['PI_PROXY_UPSTREAM_TIMEOUT_MS'] = String(config.upstreamTimeoutSec * MS_PER_SECOND)
+  // Model exposure settings are read from the shared JSON config file at startup.
+  // They are not passed as env vars because the proxy loads the config file directly.
+  return env
 }

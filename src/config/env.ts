@@ -8,94 +8,94 @@
  * override it for one-off adjustments or container use.
  */
 
-import type { ModelExposureMode, PublicModelIdMode } from "@proxy/config/schema";
-import { BYTES_PER_MB, loadConfigFromFile, MS_PER_SECOND } from "@proxy/config/schema";
+import type { ModelExposureMode, PublicModelIdMode } from '@proxy/config/schema'
+import { BYTES_PER_MB, loadConfigFromFile, MS_PER_SECOND } from '@proxy/config/schema'
 
 export interface ServerConfig {
-	/** Host to bind to. */
-	readonly host: string;
-	/** Port to listen on. */
-	readonly port: number;
-	/** Optional proxy auth bearer token. Undefined = no auth. */
-	readonly proxyAuthToken: string | undefined;
-	/** Whether agentic mode is enabled. */
-	readonly agenticEnabled: boolean;
-	/** Whether remote image URL fetching is enabled. */
-	readonly remoteImagesEnabled: boolean;
-	/** Maximum request body size in bytes. */
-	readonly maxBodySize: number;
-	/** Upstream request timeout in milliseconds. */
-	readonly upstreamTimeoutMs: number;
-	/** How public model IDs are generated. */
-	readonly publicModelIdMode: PublicModelIdMode;
-	/** Which models are exposed. */
-	readonly modelExposureMode: ModelExposureMode;
-	/** Canonical model IDs for "custom" exposure mode. */
-	readonly customModels: readonly string[];
-	/** Provider key -> custom public prefix label. */
-	readonly providerPrefixes: Readonly<Record<string, string>>;
+  /** Host to bind to. */
+  readonly host: string
+  /** Port to listen on. */
+  readonly port: number
+  /** Optional proxy auth bearer token. Undefined = no auth. */
+  readonly proxyAuthToken: string | undefined
+  /** Whether agentic mode is enabled. */
+  readonly agenticEnabled: boolean
+  /** Whether remote image URL fetching is enabled. */
+  readonly remoteImagesEnabled: boolean
+  /** Maximum request body size in bytes. */
+  readonly maxBodySize: number
+  /** Upstream request timeout in milliseconds. */
+  readonly upstreamTimeoutMs: number
+  /** How public model IDs are generated. */
+  readonly publicModelIdMode: PublicModelIdMode
+  /** Which models are exposed. */
+  readonly modelExposureMode: ModelExposureMode
+  /** Canonical model IDs for "custom" exposure mode. */
+  readonly customModels: readonly string[]
+  /** Provider key -> custom public prefix label. */
+  readonly providerPrefixes: Readonly<Record<string, string>>
 }
 
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
-	if (raw === undefined) return fallback;
-	const n = Number.parseInt(raw, 10);
-	if (!Number.isFinite(n) || n <= 0) return fallback;
-	return n;
+  if (raw === undefined) return fallback
+  const n = Number.parseInt(raw, 10)
+  if (!Number.isFinite(n) || n <= 0) return fallback
+  return n
 }
 
 export interface CliOverrides {
-	host?: string | undefined;
-	port?: number | undefined;
-	authToken?: string | undefined;
-	remoteImages?: boolean | undefined;
-	maxBodySizeMb?: number | undefined;
-	upstreamTimeoutSec?: number | undefined;
+  host?: string | undefined
+  port?: number | undefined
+  authToken?: string | undefined
+  remoteImages?: boolean | undefined
+  maxBodySizeMb?: number | undefined
+  upstreamTimeoutSec?: number | undefined
 }
 
 /**
  * Load config with priority: CLI args > env vars > JSON file > defaults.
  */
 export function loadConfig(cli: CliOverrides = {}): ServerConfig {
-	const file = loadConfigFromFile();
+  const file = loadConfigFromFile()
 
-	const host = cli.host ?? process.env.PI_PROXY_HOST ?? file.host;
-	const port = cli.port ?? parsePositiveInt(process.env.PI_PROXY_PORT, file.port);
+  const host = cli.host ?? process.env.PI_PROXY_HOST ?? file.host
+  const port = cli.port ?? parsePositiveInt(process.env.PI_PROXY_PORT, file.port)
 
-	// Auth token: CLI > env > file (empty string in file = disabled)
-	const fileToken = file.authToken.length > 0 ? file.authToken : undefined;
-	const proxyAuthToken = cli.authToken ?? process.env.PI_PROXY_AUTH_TOKEN ?? fileToken;
+  // Auth token: CLI > env > file (empty string in file = disabled)
+  const fileToken = file.authToken.length > 0 ? file.authToken : undefined
+  const proxyAuthToken = cli.authToken ?? process.env.PI_PROXY_AUTH_TOKEN ?? fileToken
 
-	const envRemoteImages = process.env.PI_PROXY_REMOTE_IMAGES;
-	const remoteImagesEnabled =
-		cli.remoteImages ??
-		(envRemoteImages === undefined ? file.remoteImages : envRemoteImages === "true");
+  const envRemoteImages = process.env.PI_PROXY_REMOTE_IMAGES
+  const remoteImagesEnabled =
+    cli.remoteImages ??
+    (envRemoteImages === undefined ? file.remoteImages : envRemoteImages === 'true')
 
-	const maxBodySize =
-		cli.maxBodySizeMb === undefined
-			? parsePositiveInt(process.env.PI_PROXY_MAX_BODY_SIZE, file.maxBodySizeMb * BYTES_PER_MB)
-			: cli.maxBodySizeMb * BYTES_PER_MB;
+  const maxBodySize =
+    cli.maxBodySizeMb === undefined
+      ? parsePositiveInt(process.env.PI_PROXY_MAX_BODY_SIZE, file.maxBodySizeMb * BYTES_PER_MB)
+      : cli.maxBodySizeMb * BYTES_PER_MB
 
-	const upstreamTimeoutMs =
-		cli.upstreamTimeoutSec === undefined
-			? parsePositiveInt(
-					process.env.PI_PROXY_UPSTREAM_TIMEOUT_MS,
-					file.upstreamTimeoutSec * MS_PER_SECOND,
-				)
-			: cli.upstreamTimeoutSec * MS_PER_SECOND;
+  const upstreamTimeoutMs =
+    cli.upstreamTimeoutSec === undefined
+      ? parsePositiveInt(
+          process.env.PI_PROXY_UPSTREAM_TIMEOUT_MS,
+          file.upstreamTimeoutSec * MS_PER_SECOND
+        )
+      : cli.upstreamTimeoutSec * MS_PER_SECOND
 
-	const agenticEnabled = process.env.PI_PROXY_AGENTIC === "true";
+  const agenticEnabled = process.env.PI_PROXY_AGENTIC === 'true'
 
-	return {
-		host,
-		port,
-		proxyAuthToken,
-		agenticEnabled,
-		remoteImagesEnabled,
-		maxBodySize,
-		upstreamTimeoutMs,
-		publicModelIdMode: file.publicModelIdMode,
-		modelExposureMode: file.modelExposureMode,
-		customModels: file.customModels,
-		providerPrefixes: file.providerPrefixes,
-	};
+  return {
+    host,
+    port,
+    proxyAuthToken,
+    agenticEnabled,
+    remoteImagesEnabled,
+    maxBodySize,
+    upstreamTimeoutMs,
+    publicModelIdMode: file.publicModelIdMode,
+    modelExposureMode: file.modelExposureMode,
+    customModels: file.customModels,
+    providerPrefixes: file.providerPrefixes
+  }
 }

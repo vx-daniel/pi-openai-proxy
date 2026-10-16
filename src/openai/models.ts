@@ -5,42 +5,42 @@
  * Public IDs are determined by the model-exposure engine.
  */
 
-import type { ExposedModel } from "@proxy/openai/model-exposure";
+import type { ExposedModel } from '@proxy/openai/model-exposure'
 
-const MS_PER_SECOND = 1000;
+const MS_PER_SECOND = 1000
 /** Unix timestamp (seconds) from when the module was first loaded. */
-const MODULE_CREATED = Math.floor(Date.now() / MS_PER_SECOND);
+const MODULE_CREATED = Math.floor(Date.now() / MS_PER_SECOND)
 
 export interface OpenAIModel {
-	readonly id: string;
-	readonly object: "model";
-	readonly created: number;
-	readonly owned_by: string;
+  readonly id: string
+  readonly object: 'model'
+  readonly created: number
+  readonly owned_by: string
 }
 
 export interface OpenAIModelList {
-	readonly object: "list";
-	readonly data: readonly OpenAIModel[];
+  readonly object: 'list'
+  readonly data: readonly OpenAIModel[]
 }
 
 /**
  * Convert an ExposedModel to an OpenAI model object.
  */
 export function toOpenAIModel(exposed: ExposedModel): OpenAIModel {
-	return {
-		id: exposed.publicId,
-		object: "model",
-		created: MODULE_CREATED,
-		owned_by: exposed.provider,
-	};
+  return {
+    id: exposed.publicId,
+    object: 'model',
+    created: MODULE_CREATED,
+    owned_by: exposed.provider
+  }
 }
 
 /**
  * Build the full model list response.
  */
 export function buildModelList(models: readonly ExposedModel[]): OpenAIModelList {
-	return {
-		object: "list",
-		data: models.map(toOpenAIModel),
-	};
+  return {
+    object: 'list',
+    data: models.map(toOpenAIModel)
+  }
 }
