@@ -14,6 +14,7 @@ import type {
 	AssistantMessage,
 	Context,
 	ImageContent,
+	JsonObject,
 	Message,
 	TextContent,
 	ToolCall,
@@ -23,7 +24,8 @@ import type {
 import type { OpenAIMessage } from "@proxy/openai/schemas";
 import * as z from "zod";
 
-const toolArgsSchema = z.record(z.string().trim(), z.unknown());
+// Tool-call arguments are JSON values (Pi 1.x types them as JsonObject), not arbitrary objects.
+const toolArgsSchema = z.record(z.string().trim(), z.json());
 
 export interface ConversionSuccess {
 	readonly ok: true;
@@ -182,7 +184,7 @@ function convertAssistantMessage(
 
 	if (toolCalls !== undefined) {
 		for (const tc of toolCalls) {
-			let args: Record<string, unknown> = {};
+			let args: JsonObject = {};
 			try {
 				const parsed = toolArgsSchema.safeParse(JSON.parse(tc.function.arguments));
 				if (parsed.success) {

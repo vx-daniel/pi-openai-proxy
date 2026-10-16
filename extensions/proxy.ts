@@ -27,12 +27,11 @@ import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import {
-	AuthStorage,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type ExtensionContext,
 	getSettingsListTheme,
-	ModelRegistry,
+	type ModelRegistry,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -93,15 +92,26 @@ export default function proxyExtension(pi: ExtensionAPI): void {
 	const extensionDir = dirname(fileURLToPath(import.meta.url));
 	const packageRoot = resolve(extensionDir, "..");
 
-	// --- Model registry access (cached, refreshed per call) ---
+	// --- Model registry access ---
 
-	const cachedAuth = AuthStorage.create();
-	const cachedRegistry = ModelRegistry.create(cachedAuth);
+	// Pi 1.x no longer lets an extension build its own registry (`AuthStorage` and
+	// `ModelRegistry.create()` are gone). Every entry point here starts from a handler that has a
+	// context, so each one calls useModelRegistry() first. It also refreshes the registry (from
+	// models.json and stored credentials, no network), because the old code refreshed before every
+	// read and a model list taken at session start would miss a later `/login`.
+	let activeModelRegistry: ModelRegistry | undefined;
 	const settingsManager = SettingsManager.create(process.cwd());
 
+	async function useModelRegistry(ctx: ExtensionContext): Promise<void> {
+		activeModelRegistry = ctx.modelRegistry;
+		await activeModelRegistry.refresh({ allowNetwork: false });
+	}
+
 	function getAvailableModels(): Model<Api>[] {
-		cachedRegistry.refresh();
-		return cachedRegistry.getAvailable();
+		if (activeModelRegistry === undefined) {
+			throw new Error("The model registry is only available once a session has started.");
+		}
+		return activeModelRegistry.getAvailable();
 	}
 
 	async function getEnabledModels(): Promise<readonly string[] | undefined> {
@@ -173,6 +183,7 @@ export default function proxyExtension(pi: ExtensionAPI): void {
 	// --- Lifecycle ---
 
 	pi.on("session_start", async (_event, ctx) => {
+		await useModelRegistry(ctx);
 		config = loadConfigFromFile();
 		await maybeAutoSyncZed(ctx);
 		await refreshStatus(ctx);
@@ -212,6 +223,7 @@ export default function proxyExtension(pi: ExtensionAPI): void {
 			return matches.length > 0 ? matches.map((value) => ({ value, label: value })) : null;
 		},
 		handler: async (args, ctx) => {
+			await useModelRegistry(ctx);
 			const sub = args.trim().split(/\s+/)[0] ?? "";
 
 			switch (sub) {

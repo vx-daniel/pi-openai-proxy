@@ -265,6 +265,38 @@ describe("SSE usage chunk conformance", () => {
 		const usageChunk = chunks.find((c) => c.choices.length === 0);
 		expect(usageChunk).toBeUndefined();
 	});
+
+	// Catches the streamed usage chunk reporting only Pi's uncached `input` as prompt_tokens. Docker
+	// Agent reads context size and its compaction trigger from this chunk; with prompt caching a
+	// ~9,650-token prompt arrived as prompt_tokens 4. Numbers are those of the measured case.
+	test("usage chunk counts cached tokens in prompt_tokens and breaks them out", async () => {
+		const cachedMessage = {
+			...makePartial([{ type: "text", text: "Hi" }]),
+			stopReason: "stop",
+			usage: {
+				input: 4,
+				output: 4,
+				cacheRead: 9000,
+				cacheWrite: 642,
+				totalTokens: 9650,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			} satisfies Usage,
+		} as AssistantMessage;
+		const cachedEvents: AssistantMessageEvent[] = [
+			{ type: "start", partial: makePartial() },
+			{ type: "done", reason: "stop", message: cachedMessage },
+		];
+
+		const chunks = chunkFrames(parseChunks(await collectFrames(cachedEvents, true)));
+		const usage = chunks.find((c) => c.choices.length === 0)?.usage;
+
+		expect(usage).toEqual({
+			prompt_tokens: 9646,
+			completion_tokens: 4,
+			total_tokens: 9650,
+			prompt_tokens_details: { cached_tokens: 9000, cache_write_tokens: 642 },
+		});
+	});
 });
 
 // ---------------------------------------------------------------------------

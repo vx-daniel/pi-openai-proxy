@@ -47,12 +47,15 @@ const TEST_MODEL_MATRIX: readonly TestModel[] = [
 
 let resolvedModels: Map<string, TestModel> | undefined;
 
+// Pi 1.x initializes its model runtime asynchronously. Doing it once here, with a top-level
+// await, keeps every helper below (and the tests that call them while being collected) synchronous.
+await initRegistry();
+
 /**
- * Initialize the registry and app once.
+ * Create the app and resolve the available test models once.
  */
 export function setup(): { app: ReturnType<typeof testApp> } {
 	if (!initialized) {
-		initRegistry();
 		app = testApp();
 
 		const available = new Set(getAvailableModels().map((m) => `${m.provider}/${m.id}`));

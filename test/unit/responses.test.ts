@@ -29,7 +29,7 @@ describe("mapUsage", () => {
 			cost: { input: 0.001, output: 0.002, cacheRead: 0.0001, cacheWrite: 0.0002, total: 0.0033 },
 		};
 		const result = mapUsage(piUsage);
-		expect(result.prompt_tokens).toBe(100);
+		expect(result.prompt_tokens).toBe(115);
 		expect(result.completion_tokens).toBe(50);
 		expect(result.total_tokens).toBe(165);
 	});
