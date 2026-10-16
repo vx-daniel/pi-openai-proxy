@@ -100,6 +100,23 @@ curl http://localhost:4141/v1/chat/completions \
 | `GET /v1/models/{model}` | Model details by public ID or canonical ID (supports URL-encoded IDs with `/`) |
 | `POST /v1/chat/completions` | Chat completions (streaming and non-streaming) |
 
+### Health checks
+
+Operational endpoints, outside the OpenAI-compatible `/v1` surface:
+
+| Endpoint | Auth | Answers |
+|---|---|---|
+| `GET /healthz` | Never | `200 {"status":"ok"}` once the proxy listens and pi's model runtime is loaded. No upstream calls: use it for container healthchecks and liveness probes. |
+| `GET /healthz/models` | Proxy token, if set | Available and exposed model counts, exposure modes, a `models.json` load error. `503` when no model is exposed or the exposure config is invalid. |
+| `GET /healthz/creds` | Proxy token, if set | Per provider with a credential: `type` (`oauth` or `api_key`), `source` (`stored`, `environment`, `models_json_key`, …) and `availableModelCount`. `503` when no provider has one. Reads local state only; `?verify=true` also has pi resolve each credential now (which may refresh an OAuth token over the network) and adds `verified` and `error` per provider, `503` if any fails. |
+
+None of them returns a credential. `/healthz` proves the process is up, not that a provider will accept a request: `GET /healthz/creds?verify=true` is the closest check to that without spending a completion.
+
+```bash
+curl -fsS http://localhost:4141/healthz
+curl -fsS http://localhost:4141/healthz/creds?verify=true -H "Authorization: Bearer $PI_PROXY_AUTH_TOKEN"
+```
+
 ## Supported Chat Completions Features
 
 | Feature | Notes |
@@ -213,7 +230,7 @@ The proxy logs with [LogTape](https://logtape.org) to stderr:
 
 `PI_PROXY_LOG_FORMAT` (or `--log-format`) picks one regardless of the terminal, for example `pretty` for reading `docker compose logs` directly.
 
-A successful `GET /v1/models` (what healthchecks and clients poll) is logged at `debug`; a failed one stays at `info`.
+Passing `/healthz` checks are logged at `debug`; a failed one stays at `info`.
 
 An invalid `--log-level` or `--log-format` stops the proxy from starting and lists the valid values. An invalid `PI_PROXY_LOG_LEVEL` or `PI_PROXY_LOG_FORMAT` is ignored with a warning, and an invalid `logLevel` in the config file falls back to `info`, so a bad value in either never keeps a background proxy from starting.
 
@@ -260,7 +277,7 @@ curl http://localhost:4141/v1/chat/completions \
 
 ### Proxy authentication
 
-Set `PI_PROXY_AUTH_TOKEN` to require a bearer token for all requests:
+Set `PI_PROXY_AUTH_TOKEN` to require a bearer token for every request except the `GET /healthz` liveness check:
 
 ```bash
 PI_PROXY_AUTH_TOKEN=my-secret-token pi-openai-proxy

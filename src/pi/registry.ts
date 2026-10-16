@@ -125,3 +125,90 @@ export async function getEnabledModels(): Promise<readonly string[] | undefined>
   })
   return enabledModels
 }
+
+/** Why models.json failed to load, or undefined when it loaded (or there is none). */
+export function getModelsJsonError(): string | undefined {
+  return getRuntime().getError()
+}
+
+/** How one provider is authenticated, for the health endpoint. Never the credential itself. */
+export interface ProviderCredentialStatus {
+  readonly provider: string
+  /** `oauth` for a subscription login, `api_key` otherwise. */
+  readonly type: 'oauth' | 'api_key'
+  /** Where pi found the credential: `stored`, `environment`, `models_json_key`, … */
+  readonly source: string | undefined
+  readonly availableModelCount: number
+  /**
+   * Only when verification was asked for: whether pi resolved a usable credential just now, which
+   * may refresh an OAuth token over the network. `error` says why not.
+   */
+  readonly verified?: boolean
+  readonly error?: string
+}
+
+/** Longest verification error returned, after the stack is cut. */
+const MAX_AUTH_ERROR_LENGTH = 500
+
+/**
+ * Pi's refresh errors append `; stack=…` with file paths of the install, which an HTTP response
+ * should not carry. Keep the summary: the provider, the token URL, the upstream status and body.
+ */
+function summarizeAuthError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  const [summary = message] = message.split('; stack=')
+  const [firstLine = summary] = summary.split('\n')
+  return firstLine.slice(0, MAX_AUTH_ERROR_LENGTH)
+}
+
+async function verifyProvider(
+  provider: string
+): Promise<Pick<ProviderCredentialStatus, 'verified' | 'error'>> {
+  try {
+    const resolved = await getRuntime().getAuth(provider)
+    return resolved === undefined
+      ? { verified: false, error: 'no credentials configured' }
+      : { verified: true }
+  } catch (error) {
+    const summary = summarizeAuthError(error)
+    registryLogger.warn('Credential verification failed for {provider}', { provider })
+    // The summary quotes the token endpoint's response: debug only, like other upstream error text.
+    registryLogger.debug('Credential verification error for {provider}: {error}', {
+      provider,
+      error: summary
+    })
+    return { verified: false, error: summary }
+  }
+}
+
+/**
+ * Every provider pi has a credential for, with how it is configured and how many of its models are
+ * available. Reads local state only, unless `verify` asks pi to resolve each credential (which may
+ * refresh an OAuth token over the network).
+ */
+export async function getCredentialStatuses(verify: boolean): Promise<ProviderCredentialStatus[]> {
+  const modelRuntime = getRuntime()
+  const availableByProvider = new Map<string, number>()
+  for (const model of modelRuntime.getAvailableSnapshot()) {
+    availableByProvider.set(model.provider, (availableByProvider.get(model.provider) ?? 0) + 1)
+  }
+  const configured = modelRuntime
+    .getProviders()
+    .filter((provider) => modelRuntime.hasConfiguredAuth(provider.id))
+  const statuses = await Promise.all(
+    configured.map(async ({ id }): Promise<ProviderCredentialStatus> => {
+      const base: ProviderCredentialStatus = {
+        provider: id,
+        type: modelRuntime.isUsingOAuth(id) ? 'oauth' : 'api_key',
+        source: modelRuntime.getProviderAuthStatus(id).source,
+        availableModelCount: availableByProvider.get(id) ?? 0
+      }
+      return verify ? { ...base, ...(await verifyProvider(id)) } : base
+    })
+  )
+  registryLogger.debug('Credential status for {providerCount} providers', {
+    providerCount: statuses.length,
+    verify
+  })
+  return statuses
+}

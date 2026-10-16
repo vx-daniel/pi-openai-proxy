@@ -11,6 +11,7 @@
  *   server.http        one line per request and per response; client disconnects
  *   server.auth        proxy authentication decisions
  *   server.chat        the chat completions route: model resolution, dispatch, upstream errors
+ *   server.health      failed /healthz detail checks (a passing check logs nothing above debug)
  *   config             config file, env var and CLI resolution
  *   openai.messages    message conversion          openai.tools       tool conversion
  *   openai.sse         streaming responses         openai.responses   non-streaming responses

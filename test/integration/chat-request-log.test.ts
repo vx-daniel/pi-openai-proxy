@@ -119,23 +119,31 @@ describe('chat request logging', () => {
     expect(http[1]?.properties).toMatchObject({ method: 'GET', path: '/v1/models', status: 200 })
   })
 
-  // Catches a healthcheck or a client polling the model list flooding the default-level log, or a
-  // failing model list being hidden with it.
-  test('logs a successful model list at debug and a failed one at info', async () => {
+  // Catches a container healthcheck flooding the default-level log, a failing check being hidden
+  // with it, or real clients' model listings being hidden as well.
+  test('logs a passing health check at debug and a failed one or a model list at info', async () => {
     lines = []
     configureLogging({ level: 'info', format: 'json', write: (line) => lines.push(line) })
     const authApp = testApp({ ...testConfig(), proxyAuthToken: 'notarealsecret-token' })
 
-    await app.request('/v1/models')
+    await authApp.request('/healthz')
     expect(logged('pi-openai-proxy.server.http')).toEqual([])
 
-    const rejected = await authApp.request('/v1/models')
+    const rejected = await authApp.request('/healthz/models')
     expect(rejected.status).toBe(401)
+    await app.request('/v1/models')
     const answered = logged('pi-openai-proxy.server.http').filter((record) =>
       record.message.includes('answered')
     )
-    expect(answered.map((record) => [record.level, record.properties['status']])).toEqual([
-      ['INFO', 401]
+    expect(
+      answered.map((record) => [
+        record.level,
+        record.properties['path'],
+        record.properties['status']
+      ])
+    ).toEqual([
+      ['INFO', '/healthz/models', 401],
+      ['INFO', '/v1/models', 200]
     ])
   })
 })

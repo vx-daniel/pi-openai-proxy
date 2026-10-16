@@ -19,7 +19,7 @@ const httpLogger = proxyLogger('server', 'http')
 const authLogger = proxyLogger('server', 'auth')
 
 const BEARER_PREFIX = 'Bearer '
-const MODEL_LIST_PATH = '/v1/models'
+const HEALTH_PATH = '/healthz'
 
 /**
  * Inject the request ID and upstream API key into every request, and log the request and its
@@ -44,9 +44,11 @@ export function requestIdMiddleware(): MiddlewareHandler<ProxyEnv> {
     }
 
     const { method, path } = context.req
-    // A model list is what healthchecks and clients poll, often every few seconds: its lines go to
-    // debug, except an answer that is not 2xx, which stays at info.
-    const polling = method === 'GET' && path === MODEL_LIST_PATH
+    // Health endpoints are what container healthchecks and monitors poll, often every few seconds:
+    // their lines go to debug, except an answer that is not 2xx, which stays at info. At info, a
+    // failed check therefore shows only its "answered" line: the request line was decided before the
+    // status was known, and the answer line carries the same method, path and request id.
+    const polling = path === HEALTH_PATH || path.startsWith(`${HEALTH_PATH}/`)
     await withContext({ requestId, clientRequestId }, async () => {
       const received = {
         method,
