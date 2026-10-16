@@ -11,12 +11,14 @@
  * - properties, required, items
  * - enum (string enums)
  * - nullable via type: [T, "null"]
- * - anyOf for nullable types and simple unions (max 10 branches)
+ * - anyOf for nullable types and simple unions (max 10 branches); a sibling `type` is carried
  * - annotations on any node: description, title, default, examples, deprecated, readOnly, writeOnly
- * - constraints per type, carried over (see CONSTRAINT_KEYWORDS):
+ * - constraints per type, carried over (see TYPE_CONVERTERS), also on a string enum:
  *   string minLength, maxLength, pattern, format, const; number and integer minimum, maximum,
  *   exclusiveMinimum, exclusiveMaximum, multipleOf, const; boolean const; array minItems,
  *   maxItems, uniqueItems; object minProperties, maxProperties, additionalProperties (boolean)
+ * - values are checked by kind only: `const` is not checked against the type, nor `pattern`
+ *   compiled
  *
  * Dropped, logged at debug: $schema, $id, $comment (they say nothing to the model).
  *
@@ -64,8 +66,11 @@ const schemaLogger = proxyLogger('openai', 'schema')
 const MAX_ANY_OF_BRANCHES = 10
 const NULLABLE_TYPE_ARRAY_LENGTH = 2
 
-/** What a keyword's value must be. `count` is a non-negative integer, `json` any JSON value. */
-type KeywordValueKind = 'string' | 'number' | 'count' | 'boolean' | 'array' | 'json'
+/**
+ * What a keyword's value must be. `count` is a non-negative integer, `types` a type name or a
+ * list of them, `json` any JSON value.
+ */
+type KeywordValueKind = 'string' | 'number' | 'count' | 'boolean' | 'array' | 'types' | 'json'
 
 /** For each kind of keyword value: how errors describe it, and whether a value is one. */
 const KEYWORD_VALUE_KINDS: Readonly<
@@ -89,6 +94,13 @@ const KEYWORD_VALUE_KINDS: Readonly<
     accepts: (keywordValue) => typeof keywordValue === 'boolean'
   },
   array: { description: 'an array', accepts: (keywordValue) => Array.isArray(keywordValue) },
+  types: {
+    description: 'a type name or an array of type names',
+    accepts: (keywordValue) =>
+      typeof keywordValue === 'string' ||
+      (Array.isArray(keywordValue) &&
+        keywordValue.every((typeName) => typeof typeName === 'string'))
+  },
   json: { description: 'a JSON value', accepts: (keywordValue) => keywordValue !== undefined }
 }
 
@@ -106,6 +118,16 @@ const ANNOTATION_KEYWORDS: ReadonlyMap<string, KeywordValueKind> = new Map([
 /** Meta declarations: they say nothing to the model, so they are dropped (logged at debug). */
 const META_KEYWORDS: ReadonlySet<string> = new Set(['$schema', '$id', '$comment'])
 
+const NO_CONSTRAINTS: ReadonlyMap<string, KeywordValueKind> = new Map()
+
+const STRING_CONSTRAINTS: ReadonlyMap<string, KeywordValueKind> = new Map([
+  ['minLength', 'count'],
+  ['maxLength', 'count'],
+  ['pattern', 'string'],
+  ['format', 'string'],
+  ['const', 'json']
+])
+
 const NUMBER_CONSTRAINTS: ReadonlyMap<string, KeywordValueKind> = new Map([
   ['minimum', 'number'],
   ['maximum', 'number'],
@@ -115,46 +137,87 @@ const NUMBER_CONSTRAINTS: ReadonlyMap<string, KeywordValueKind> = new Map([
   ['const', 'json']
 ])
 
-/** Validation keywords per type, carried into the converted schema. */
-const CONSTRAINT_KEYWORDS: ReadonlyMap<string, ReadonlyMap<string, KeywordValueKind>> = new Map([
+/** On an `anyOf` node: a sibling `type`, which some generators emit, carried as written. */
+const ANY_OF_CONSTRAINTS: ReadonlyMap<string, KeywordValueKind> = new Map([['type', 'types']])
+
+/** How one supported `type` converts. */
+interface TypeConverter {
+  /** Validation keywords, carried into the converted schema. */
+  readonly constraints: ReadonlyMap<string, KeywordValueKind>
+  /** Keywords `convert` reads itself, besides `type`. */
+  readonly structural: readonly string[]
+  convert(
+    opts: Record<string, unknown>,
+    schema: Record<string, unknown>,
+    path: string
+  ): SchemaConversionResult
+}
+
+const TYPE_CONVERTERS: ReadonlyMap<string, TypeConverter> = new Map<string, TypeConverter>([
   [
     'string',
-    new Map<string, KeywordValueKind>([
-      ['minLength', 'count'],
-      ['maxLength', 'count'],
-      ['pattern', 'string'],
-      ['format', 'string'],
-      ['const', 'json']
-    ])
+    {
+      constraints: STRING_CONSTRAINTS,
+      structural: [],
+      convert: (opts) => ({ ok: true, schema: Type.String(opts) })
+    }
   ],
-  ['number', NUMBER_CONSTRAINTS],
-  ['integer', NUMBER_CONSTRAINTS],
-  ['boolean', new Map<string, KeywordValueKind>([['const', 'json']])],
-  ['null', new Map<string, KeywordValueKind>()],
+  [
+    'number',
+    {
+      constraints: NUMBER_CONSTRAINTS,
+      structural: [],
+      convert: (opts) => ({ ok: true, schema: Type.Number(opts) })
+    }
+  ],
+  [
+    'integer',
+    {
+      constraints: NUMBER_CONSTRAINTS,
+      structural: [],
+      convert: (opts) => ({ ok: true, schema: Type.Integer(opts) })
+    }
+  ],
+  [
+    'boolean',
+    {
+      constraints: new Map([['const', 'json']]),
+      structural: [],
+      convert: (opts) => ({ ok: true, schema: Type.Boolean(opts) })
+    }
+  ],
+  [
+    'null',
+    {
+      constraints: NO_CONSTRAINTS,
+      structural: [],
+      convert: (opts) => ({ ok: true, schema: Type.Null(opts) })
+    }
+  ],
   [
     'array',
-    new Map<string, KeywordValueKind>([
-      ['minItems', 'count'],
-      ['maxItems', 'count'],
-      ['uniqueItems', 'boolean']
-    ])
+    {
+      constraints: new Map([
+        ['minItems', 'count'],
+        ['maxItems', 'count'],
+        ['uniqueItems', 'boolean']
+      ]),
+      structural: ['items'],
+      convert: (opts, schema, path) => convertArray(schema, path, opts)
+    }
   ],
   [
     'object',
-    new Map<string, KeywordValueKind>([
-      ['minProperties', 'count'],
-      ['maxProperties', 'count'],
-      ['additionalProperties', 'boolean']
-    ])
+    {
+      constraints: new Map([
+        ['minProperties', 'count'],
+        ['maxProperties', 'count'],
+        ['additionalProperties', 'boolean']
+      ]),
+      structural: ['properties', 'required'],
+      convert: (opts, schema, path) => convertObject(schema, path, opts)
+    }
   ]
-])
-
-const NO_CONSTRAINTS: ReadonlyMap<string, KeywordValueKind> = new Map()
-
-/** Keywords a type's converter reads itself, besides `type`. */
-const STRUCTURAL_KEYWORDS: ReadonlyMap<string, readonly string[]> = new Map([
-  ['object', ['properties', 'required']],
-  ['array', ['items']]
 ])
 
 /**
@@ -195,17 +258,22 @@ function convertSchema(schema: unknown, path: string): SchemaConversionResult {
   if (Array.isArray(anyOf)) {
     const keywords = collectKeywords(schema, path, {
       structural: ['anyOf'],
-      constraints: NO_CONSTRAINTS
+      constraints: ANY_OF_CONSTRAINTS
     })
     return keywords.ok ? convertAnyOf(anyOf, path, keywords.opts) : keywords
   }
 
-  // Handle enum
+  // Handle enum: a string enum may also carry its type's constraints (e.g. `format`)
   const enumValues = schema['enum']
   if (Array.isArray(enumValues)) {
+    const enumType = schema['type']
     const keywords = collectKeywords(schema, path, {
       structural: ['enum', 'type'],
-      constraints: NO_CONSTRAINTS
+      constraints:
+        typeof enumType === 'string'
+          ? (TYPE_CONVERTERS.get(enumType)?.constraints ?? NO_CONSTRAINTS)
+          : NO_CONSTRAINTS,
+      ...(typeof enumType === 'string' ? { typeName: enumType } : {})
     })
     return keywords.ok ? convertEnum(enumValues, path, keywords.opts) : keywords
   }
@@ -329,8 +397,8 @@ function convertTyped(
   schema: Record<string, unknown>,
   path: string
 ): SchemaConversionResult {
-  const constraints = CONSTRAINT_KEYWORDS.get(rawType)
-  if (constraints === undefined) {
+  const converter = TYPE_CONVERTERS.get(rawType)
+  if (converter === undefined) {
     return {
       ok: false,
       message: `Unsupported type '${rawType}' at ${path || 'root'}`,
@@ -338,34 +406,11 @@ function convertTyped(
     }
   }
   const keywords = collectKeywords(schema, path, {
-    structural: ['type', ...(STRUCTURAL_KEYWORDS.get(rawType) ?? [])],
-    constraints,
+    structural: ['type', ...converter.structural],
+    constraints: converter.constraints,
     typeName: rawType
   })
-  if (!keywords.ok) {
-    return keywords
-  }
-  const { opts } = keywords
-
-  switch (rawType) {
-    case 'object':
-      return convertObject(schema, path, opts)
-    case 'string':
-      return { ok: true, schema: Type.String(opts) }
-    case 'number':
-      return { ok: true, schema: Type.Number(opts) }
-    case 'integer':
-      return { ok: true, schema: Type.Integer(opts) }
-    case 'boolean':
-      return { ok: true, schema: Type.Boolean(opts) }
-    case 'array':
-      return convertArray(schema, path, opts)
-    case 'null':
-      return { ok: true, schema: Type.Null(opts) }
-    default:
-      // Unreachable: CONSTRAINT_KEYWORDS has an entry for exactly the types handled above.
-      return { ok: false, message: `Unsupported type '${rawType}' at ${path || 'root'}`, path }
-  }
+  return keywords.ok ? converter.convert(keywords.opts, schema, path) : keywords
 }
 
 /**

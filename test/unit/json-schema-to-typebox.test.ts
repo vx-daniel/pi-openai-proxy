@@ -407,6 +407,31 @@ describe('jsonSchemaToTypebox', () => {
       ).toEqual({ type: 'object', properties: { city: { type: 'string' } } })
     })
 
+    // Catches a sibling `type` on an anyOf node, which the converter ignored before #37 and some
+    // generators emit, refused or dropped instead of carried as the client wrote it.
+    test('anyOf keeps a sibling type', () => {
+      expect(
+        convertedJson({
+          type: 'string',
+          anyOf: [{ type: 'string', format: 'date' }, { type: 'string' }]
+        })
+      ).toEqual({
+        type: 'string',
+        anyOf: [{ type: 'string', format: 'date' }, { type: 'string' }]
+      })
+    })
+
+    // Catches a string enum's constraints (accepted before #37, though dropped) refused or dropped.
+    test('a string enum keeps its type constraints', () => {
+      expect(
+        convertedJson({ type: 'string', enum: ['2026-01-01'], format: 'date', maxLength: 10 })
+      ).toEqual({
+        anyOf: [{ type: 'string', const: '2026-01-01' }],
+        format: 'date',
+        maxLength: 10
+      })
+    })
+
     // Catches a keyword outside the supported subset silently dropped instead of refused, a
     // keyword accepted on a type it does not apply to, a value of the wrong kind sent upstream to
     // fail there, or an inherited property name (`toString`) mistaken for a supported keyword.
@@ -432,8 +457,12 @@ describe('jsonSchemaToTypebox', () => {
         "Unsupported JSON Schema keyword 'minLength' at p"
       ],
       [
-        { type: 'string', enum: ['a'], pattern: 'a' },
-        "Unsupported JSON Schema keyword 'pattern' at p"
+        { type: 'string', enum: ['a'], minimum: 1 },
+        "Unsupported JSON Schema keyword 'minimum' for type 'string' at p"
+      ],
+      [
+        { type: 7, anyOf: [{ type: 'string' }] },
+        "'type' must be a type name or an array of type names at p"
       ],
       [{ minimum: 1 }, "Missing or invalid 'type' at p"],
       [{ type: 'string', minLength: -1 }, "'minLength' must be a non-negative integer at p"],

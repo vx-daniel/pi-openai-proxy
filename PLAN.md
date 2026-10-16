@@ -375,10 +375,12 @@ Supported subset:
 - `type: object` with `properties` and `required`
 - `type: string`, `number`, `integer`, `boolean`, `null`
 - `type: array` with `items` schema
-- `enum` (string values only, mapped to TypeBox Union of literals)
+- `enum` (string values only, mapped to TypeBox Union of literals); a string enum may also carry
+  the `string` constraints below (e.g. `format`)
 - nullable types via `type: [T, "null"]`: constraints go on the `T` branch, annotations on the
   union
-- `anyOf` for nullable types and simple unions (max 10 branches)
+- `anyOf` for nullable types and simple unions (max 10 branches); a sibling `type` is carried as
+  written
 - annotations on any node: `description`, `title`, `default`, `examples`, `deprecated`,
   `readOnly`, `writeOnly`
 - constraints, carried upstream, only on the type they apply to:
@@ -388,8 +390,10 @@ Supported subset:
   - `boolean`: `const`
   - `array`: `minItems`, `maxItems`, `uniqueItems`
   - `object`: `minProperties`, `maxProperties`, `additionalProperties` (boolean)
-- keyword values are checked: lengths and counts are non-negative integers, bounds are finite
-  numbers, `pattern`/`format`/annotations are strings, flags are booleans, `examples` is an array
+- keyword values are checked by kind only: lengths and counts are non-negative integers, bounds
+  are finite numbers, `pattern`/`format`/annotations are strings, flags are booleans, `examples`
+  is an array. `const` is not checked against the node's type, and `pattern` is not compiled: a
+  provider that rejects them answers with its own error.
 
 Dropped: `$schema`, `$id`, `$comment`. They carry nothing for the model; zod-to-json-schema and
 similar generators add `$schema` to every schema. Each drop is logged at debug with its path.
