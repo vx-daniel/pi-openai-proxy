@@ -2,8 +2,18 @@
  * The logging pipeline (src/logging): what reaches the output, in which shape, at which level.
  */
 
-import { resetSync } from '@logtape/logtape'
-import { configureLogging, proxyLogger, resolveLogFormat, type LogFormat } from '@proxy/logging'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import { dispose, resetSync } from '@logtape/logtape'
+import {
+  configureFileLogging,
+  configureLogging,
+  type LogFormat,
+  proxyLogger,
+  resolveLogFormat
+} from '@proxy/logging'
 import { afterEach, describe, expect, test, vi } from 'vite-plus/test'
 
 let lines: string[] = []
@@ -78,21 +88,64 @@ describe('levels', () => {
 })
 
 describe('redaction', () => {
-  // Catches a credential reaching the output through a property name the redaction list covers.
-  test('replaces credential properties and leaves token counts alone', () => {
+  /**
+   * The property names that must never reach a log, written out here rather than read from
+   * REDACTED_FIELDS: dropping one from that list has to fail this test.
+   */
+  const MUST_REDACT = [
+    'apiKey',
+    'upstreamApiKey',
+    'authToken',
+    'proxyAuthToken',
+    'authorization',
+    'accessToken',
+    'refreshToken',
+    'password',
+    'secret'
+  ]
+  /** One property per name, each holding a fake secret, plus a count that must survive. */
+  const credentialProperties = Object.fromEntries(
+    MUST_REDACT.map((field) => [field, `notarealsecret-${field}`])
+  )
+  const expectedProperties = {
+    ...Object.fromEntries(MUST_REDACT.map((field) => [field, '[REDACTED]'])),
+    promptTokens: 12
+  }
+
+  // Catches a credential reaching stderr through any property name on the list (one dropped from
+  // REDACTED_FIELDS, or the list not applied), or redaction swallowing token counts.
+  test('stderr: every listed property is replaced and token counts are left alone', () => {
     capture('info')
     proxyLogger('server', 'auth').info('Checked credentials', {
-      authToken: 'sk-notarealsecret',
-      upstreamApiKey: 'notarealsecret-key',
+      ...credentialProperties,
       promptTokens: 12
     })
 
     expect(lines.join('')).not.toContain('notarealsecret')
-    expect(records()[0]?.['properties']).toEqual({
-      authToken: '[REDACTED]',
-      upstreamApiKey: '[REDACTED]',
-      promptTokens: 12
-    })
+    expect(records()[0]?.['properties']).toEqual(expectedProperties)
+  })
+
+  // Catches the extension's file log (PI_PROXY_EXTENSION_LOG_FILE) skipping the redaction stderr
+  // gets: it is a separate sink, configured separately.
+  test('file sink: every listed property is replaced there too', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'pi-proxy-log-file-'))
+    const path = join(directory, 'extension.log')
+    try {
+      configureFileLogging(path, 'info')
+      proxyLogger('extension', 'process').info('Spawned the proxy', {
+        ...credentialProperties,
+        promptTokens: 12
+      })
+      // Flushes the file sink.
+      await dispose()
+
+      const text = readFileSync(path, 'utf8')
+      expect(text).not.toContain('notarealsecret')
+      const [record] = text.trim().split('\n')
+      expect(JSON.parse(record ?? '{}')).toMatchObject({ properties: expectedProperties })
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 })
 

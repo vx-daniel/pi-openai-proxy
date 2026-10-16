@@ -10,13 +10,16 @@
  * - Edge cases: missing provider block, empty models, malformed JSONC
  */
 
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 
 import type { Api, Model } from '@earendil-works/pi-ai'
+import { resetSync } from '@logtape/logtape'
+import { configureLogging } from '@proxy/logging'
 import type { ExposedModel } from '@proxy/openai/model-exposure'
 import { findZedSettings, syncToZed, toZedModel } from '@proxy/sync/zed'
+import { isRecord } from '@proxy/utils/guards'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vite-plus/test'
 
 // ---------------------------------------------------------------------------
@@ -462,5 +465,50 @@ describe('syncToZed', () => {
 
     const content = readFileSync(settingsPath, 'utf-8')
     expect(content).toContain('http://192.168.1.100:8080/v1')
+  })
+
+  describe('when the settings file cannot be read or written', () => {
+    const READ_ONLY = 0o444
+    let errors: unknown[] = []
+
+    beforeEach(() => {
+      errors = []
+      configureLogging({
+        level: 'info',
+        format: 'json',
+        write: (line) => {
+          const record: unknown = JSON.parse(line)
+          if (isRecord(record) && record['level'] === 'ERROR') errors.push(record['properties'])
+        }
+      })
+    })
+
+    afterEach(() => {
+      resetSync()
+    })
+
+    const options = { providerName: 'Pi Proxy', apiUrl: 'http://127.0.0.1:4141/v1', dryRun: false }
+
+    // Catches the fs error's message (which names files and can carry more than the path) being
+    // logged instead of its code, the 3c3ac919 rule; and a failure going unlogged.
+    test('a read failure is logged with the path and the error code only', () => {
+      // A directory where the file should be: it exists, so the read is attempted, and fails.
+      mkdirSync(settingsPath)
+
+      expect(() => syncToZed([makeExposed()], options)).toThrow()
+      expect(errors).toEqual([{ configPath: settingsPath, code: 'EISDIR' }])
+    })
+
+    // Root ignores file permissions, so there is no read-only file to fail on.
+    test.skipIf(process.getuid?.() === 0)(
+      'a write failure is logged with the path and the error code only',
+      () => {
+        writeFileSync(settingsPath, MINIMAL_ZED_SETTINGS)
+        chmodSync(settingsPath, READ_ONLY)
+
+        expect(() => syncToZed([makeExposed()], options)).toThrow()
+        expect(errors).toEqual([{ configPath: settingsPath, code: 'EACCES' }])
+      }
+    )
   })
 })
