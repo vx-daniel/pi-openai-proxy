@@ -58,7 +58,9 @@ Strict tooling through [Vite+](https://viteplus.dev), configured in `vite.config
 - **Type guards**: `isRecord()` for narrowing `unknown`, never `as` casts
 - **Import aliases**: `@proxy/*` -> `src/*`, no `.js` extensions, no relative imports
 - **Typed env**: `src/env.d.ts` for `process.env` dot notation
-- **Git hooks** (`.vite-hooks/`): pre-commit (`vp staged` -> `vp check --fix` on staged files), commit-msg (commitlint), pre-push (lockfile sync, `vp check`, `test:ci`)
+- **Gate** (`scripts/gate.ts`, `pnpm run check:all`): format → lint + type check → tests → build; the single definition of green, run by the pre-commit hook, CI, and the release workflow
+- **Git hooks** (`.vite-hooks/`): pre-commit (`check:all`), commit-msg (commitlint), pre-push (lockfile sync)
+- **CI** (`.github/workflows/`): `ci.yml` (`gate` on pull requests into `dev`/`main` and pushes to `dev`), `secret-scan.yml` (gitleaks, new commits only, every branch), `claude-pr-review.yml` (manual), `publish.yml` (release on `main`)
 - **commitlint**: conventional commits via `@commitlint/config-conventional`
 - **semantic-release**: changelog, npm publish, GitHub release, git commit
 

@@ -345,19 +345,22 @@ The toolchain is [Vite+](https://viteplus.dev) (`vp`); all config lives in `vite
 ```bash
 vp install            # Install dependencies (pnpm); also installs the Git hooks
 vp run dev            # Rebuild on change and restart the proxy
-vp check              # Format check, lint, and type check
+pnpm run check:all    # The gate: format, lint + type check, tests, build
 vp check --fix        # Format and apply lint fixes
 vp test               # Run all tests (conformance tests need provider credentials)
 vp run test:ci        # Unit and integration tests only
 vp pack               # Build for npm (ESM + .d.ts)
 ```
 
+`check:all` (`scripts/gate.ts`) is the one definition of "green": the pre-commit hook, CI, and the release workflow all run it.
+
 ### Tooling
 
-- **Vite+** — one toolchain: Oxfmt (format), Oxlint with tsgolint (type-aware lint and type check), Vitest (tests), tsdown (`vp pack`), staged checks and Git hooks (`.vite-hooks/`)
+- **Vite+** — one toolchain: Oxfmt (format), Oxlint with tsgolint (type-aware lint and type check), Vitest (tests), tsdown (`vp pack`), and Git hooks (`.vite-hooks/`)
 - **pnpm** — package manager, driven by `vp`
 - **Node.js** — runtime (`@hono/node-server`)
 - **commitlint** — conventional commits (`commit-msg` hook)
+- **GitHub Actions** — `ci.yml` (the gate on pull requests into `dev`/`main`), `secret-scan.yml` (gitleaks on every pushed commit), `claude-pr-review.yml` (manual Claude review), `publish.yml` (release on `main`)
 - **semantic-release** — automated versioning and npm publish
 
 ## License
