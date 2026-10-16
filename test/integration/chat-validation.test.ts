@@ -6,7 +6,7 @@
 
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vite-plus/test'
 
-import { type FixtureAgentDir, loadFixtureAgentDir } from '../fixtures/agent-dir'
+import { type FixtureAgentDir, loadFixtureAgentDir, offlineProvider } from '../fixtures/agent-dir'
 import { isErrorBody, isErrorLike, jsonBody, testApp, testConfig } from '../helpers'
 
 const FIXTURE_MODEL = 'validation-fixture/model'
@@ -16,16 +16,7 @@ let agentDir: FixtureAgentDir
 
 beforeAll(async () => {
   agentDir = await loadFixtureAgentDir({
-    modelsJson: {
-      providers: {
-        'validation-fixture': {
-          baseUrl: 'http://127.0.0.1:9/v1',
-          api: 'openai-completions',
-          apiKey: 'notarealsecret-validation-key',
-          models: [{ id: 'model' }]
-        }
-      }
-    }
+    modelsJson: { providers: { 'validation-fixture': offlineProvider('model') } }
   })
   app = testApp()
 })

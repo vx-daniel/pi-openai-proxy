@@ -9,22 +9,31 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vite-plus/test'
 
 import { type FixtureAgentDir, loadFixtureAgentDir } from '../fixtures/agent-dir'
+import {
+  finishChunk,
+  type MockProvider,
+  sse,
+  startMockProvider,
+  textChunks
+} from '../fixtures/mock-provider'
 import { isErrorLike, jsonBody, testApp } from '../helpers'
 
 const MODEL_ID = 'security-fixture/vision-model'
 /** One byte over the 20 MB limit on a decoded image. */
 const OVERSIZED_BASE64 = 'A'.repeat(21 * 1024 * 1024)
 
+let mock: MockProvider
 let agentDir: FixtureAgentDir
 
 beforeAll(async () => {
+  mock = await startMockProvider({
+    'vision-model': sse([...textChunks('A small PNG.'), finishChunk('stop')])
+  })
   agentDir = await loadFixtureAgentDir({
     modelsJson: {
       providers: {
         'security-fixture': {
-          baseUrl: 'http://127.0.0.1:9/v1',
-          api: 'openai-completions',
-          apiKey: 'notarealsecret-security-key',
+          ...mock.provider(),
           models: [{ id: 'vision-model', input: ['text', 'image'] }]
         }
       }
@@ -32,8 +41,9 @@ beforeAll(async () => {
   })
 })
 
-afterAll(() => {
+afterAll(async () => {
   vi.unstubAllEnvs()
+  await mock.close()
   agentDir.remove()
 })
 
@@ -77,19 +87,23 @@ describe('image URL security', () => {
     ],
     ['a malformed data URI', 'data:not-valid', 'Invalid base64 data URI']
   ])('rejects %s with 400', async (_case, imageUrl, reason) => {
+    const upstreamCallsBefore = mock.requests.length
     const response = await sendImage(imageUrl)
     const body = await jsonBody(response)
 
     expect(response.status).toBe(400)
     expect(isErrorLike(body) ? body.error.message : body).toEqual(expect.stringContaining(reason))
+    // Refused before the provider was asked anything.
+    expect(mock.requests.length).toBe(upstreamCallsBefore)
   })
 
   // Catches the cases above passing because the model, not the image, was refused: the same
-  // request with a valid image gets past image validation to the (unreachable) upstream.
-  test('accepts a valid base64 PNG, so the rejections above are about the image', async () => {
-    const response = await sendImage('data:image/png;base64,iVBORw0KGgo=')
+  // request with a valid image is answered, and the image reaches the provider.
+  test('accepts a valid base64 PNG and forwards it, so the rejections above are about the image', async () => {
+    const png = 'data:image/png;base64,iVBORw0KGgo='
+    const response = await sendImage(png)
 
-    expect(response.status).not.toBe(400)
-    expect(response.status).not.toBe(404)
+    expect(response.status).toBe(200)
+    expect(JSON.stringify(mock.requests.at(-1)?.body)).toContain(png)
   })
 })

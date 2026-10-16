@@ -11,17 +11,8 @@
 
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vite-plus/test'
 
-import { type FixtureAgentDir, loadFixtureAgentDir } from '../fixtures/agent-dir'
+import { type FixtureAgentDir, loadFixtureAgentDir, offlineProvider } from '../fixtures/agent-dir'
 import { isErrorBody, isModelListBody, isModelObject, jsonBody, present, testApp } from '../helpers'
-
-function fixtureProvider(...modelIds: string[]): Record<string, unknown> {
-  return {
-    baseUrl: 'http://127.0.0.1:9/v1',
-    api: 'openai-completions',
-    apiKey: 'notarealsecret-models-key',
-    models: modelIds.map((modelId) => ({ id: modelId }))
-  }
-}
 
 let agentDir: FixtureAgentDir
 
@@ -29,9 +20,9 @@ beforeAll(async () => {
   agentDir = await loadFixtureAgentDir({
     modelsJson: {
       providers: {
-        alpha: fixtureProvider('shared-model', 'alpha-only'),
-        beta: fixtureProvider('shared-model'),
-        gamma: fixtureProvider('org/model-x')
+        alpha: offlineProvider('shared-model', 'alpha-only'),
+        beta: offlineProvider('shared-model'),
+        gamma: offlineProvider('org/model-x')
       }
     }
   })

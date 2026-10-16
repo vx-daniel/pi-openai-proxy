@@ -20,7 +20,7 @@ import {
   vi
 } from 'vite-plus/test'
 
-import { type FixtureAgentDir, loadFixtureAgentDir } from '../fixtures/agent-dir'
+import { type FixtureAgentDir, loadFixtureAgentDir, offlineProvider } from '../fixtures/agent-dir'
 import { testApp, testConfig } from '../helpers'
 
 const FIXTURE_PROVIDER = 'log-fixture'
@@ -32,16 +32,7 @@ let lines: string[] = []
 
 beforeAll(async () => {
   agentDir = await loadFixtureAgentDir({
-    modelsJson: {
-      providers: {
-        [FIXTURE_PROVIDER]: {
-          baseUrl: 'http://127.0.0.1:9/v1',
-          api: 'openai-completions',
-          apiKey: 'notarealsecret-log-key',
-          models: [{ id: 'model' }]
-        }
-      }
-    }
+    modelsJson: { providers: { [FIXTURE_PROVIDER]: offlineProvider('model') } }
   })
   app = testApp()
 })

@@ -7,23 +7,14 @@
 import type { ServerConfig } from '@proxy/config/env'
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vite-plus/test'
 
-import { type FixtureAgentDir, loadFixtureAgentDir } from '../fixtures/agent-dir'
+import { type FixtureAgentDir, loadFixtureAgentDir, offlineProvider } from '../fixtures/agent-dir'
 import { isErrorBody, isModelListBody, jsonBody, present, testApp, testConfig } from '../helpers'
-
-function fixtureProvider(...modelIds: string[]): Record<string, unknown> {
-  return {
-    baseUrl: 'http://127.0.0.1:9/v1',
-    api: 'openai-completions',
-    apiKey: 'notarealsecret-exposure-key',
-    models: modelIds.map((modelId) => ({ id: modelId }))
-  }
-}
 
 let agentDir: FixtureAgentDir
 
 beforeAll(async () => {
   agentDir = await loadFixtureAgentDir({
-    modelsJson: { providers: { alpha: fixtureProvider('a1', 'a2'), beta: fixtureProvider('b1') } }
+    modelsJson: { providers: { alpha: offlineProvider('a1', 'a2'), beta: offlineProvider('b1') } }
   })
 })
 
