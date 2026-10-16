@@ -93,4 +93,24 @@ describe('chat request with a credential that fails to resolve', () => {
     expect(debugDetail).not.toEqual([])
     for (const record of records) expect(record.line).not.toContain(LEAKED_PATH)
   })
+
+  // Catches the credential check moving after the stream starts: a streaming client would then get
+  // a 200 and a generic upstream error frame instead of a 401 that says what to configure.
+  test('answers a streaming request with the same 401, before any stream', async () => {
+    const response = await testApp().request('/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'auth-broken/broken-model',
+        stream: true,
+        messages: [{ role: 'user', content: 'Hello' }]
+      })
+    })
+
+    expect(response.status).toBe(401)
+    expect(response.headers.get('content-type')).toContain('application/json')
+    expect(await response.text()).toContain(
+      "Could not resolve request auth for provider 'auth-broken'"
+    )
+  })
 })

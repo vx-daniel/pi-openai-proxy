@@ -62,13 +62,28 @@ const PROVIDER_FAILED = {
 
 /** An upstream error status, what each provider sends with it, and what the client should get. */
 interface StatusCase {
+  /** Names the case and its mock model: several cases can share a status. */
+  readonly label: string
   readonly status: number
   readonly bodies: Readonly<Record<Api, unknown>>
   readonly expected: { readonly status: number; readonly body: unknown }
 }
 
+const RATE_LIMITED = {
+  status: HTTP_TOO_MANY_REQUESTS,
+  body: {
+    error: {
+      message: 'Upstream rate limit exceeded',
+      type: 'server_error',
+      param: null,
+      code: 'rate_limit'
+    }
+  }
+}
+
 const STATUS_CASES: readonly StatusCase[] = [
   {
+    label: 'invalid key',
     status: HTTP_UNAUTHORIZED,
     bodies: {
       'openai-completions': {
@@ -86,6 +101,7 @@ const STATUS_CASES: readonly StatusCase[] = [
     expected: AUTH_FAILED
   },
   {
+    label: 'no permission',
     status: HTTP_FORBIDDEN,
     bodies: {
       'openai-completions': {
@@ -106,6 +122,7 @@ const STATUS_CASES: readonly StatusCase[] = [
     expected: AUTH_FAILED
   },
   {
+    label: 'rate limit',
     status: HTTP_TOO_MANY_REQUESTS,
     bodies: {
       'openai-completions': {
@@ -125,19 +142,51 @@ const STATUS_CASES: readonly StatusCase[] = [
         }
       }
     },
-    expected: {
-      status: HTTP_TOO_MANY_REQUESTS,
-      body: {
+    expected: RATE_LIMITED
+  },
+  // The status decides, not the wording: neither body says "rate" and "limit" (#42).
+  {
+    label: 'quota exhausted',
+    status: HTTP_TOO_MANY_REQUESTS,
+    bodies: {
+      'openai-completions': {
         error: {
-          message: 'Upstream rate limit exceeded',
-          type: 'server_error',
-          param: null,
-          code: 'rate_limit'
+          message: 'You exceeded your current quota, please check your plan and billing details.',
+          type: 'insufficient_quota',
+          code: 'insufficient_quota'
+        }
+      },
+      'anthropic-messages': {
+        type: 'error',
+        error: { type: 'api_error', message: 'Too many requests' }
+      }
+    },
+    expected: RATE_LIMITED
+  },
+  // A 401 whose text mentions a rate limit is still an auth failure (#42).
+  {
+    label: 'invalid key mentioning a rate limit',
+    status: HTTP_UNAUTHORIZED,
+    bodies: {
+      'openai-completions': {
+        error: {
+          message: 'Invalid API key for the rate limit tier of this organization.',
+          type: 'invalid_request_error',
+          code: 'invalid_api_key'
+        }
+      },
+      'anthropic-messages': {
+        type: 'error',
+        error: {
+          type: 'authentication_error',
+          message: 'invalid x-api-key (rate limit headers omitted)'
         }
       }
-    }
+    },
+    expected: AUTH_FAILED
   },
   {
+    label: 'server error',
     status: HTTP_INTERNAL_SERVER_ERROR,
     bodies: {
       'openai-completions': {
@@ -155,6 +204,7 @@ const STATUS_CASES: readonly StatusCase[] = [
     expected: PROVIDER_FAILED
   },
   {
+    label: 'unavailable',
     status: HTTP_SERVICE_UNAVAILABLE,
     bodies: {
       'openai-completions': {
@@ -165,9 +215,20 @@ const STATUS_CASES: readonly StatusCase[] = [
         error: { type: 'api_error', message: 'Service unavailable' }
       }
     },
-    expected: PROVIDER_FAILED
+    expected: {
+      status: HTTP_SERVICE_UNAVAILABLE,
+      body: {
+        error: {
+          message: 'Upstream provider is unavailable',
+          type: 'server_error',
+          param: null,
+          code: 'provider_unavailable'
+        }
+      }
+    }
   },
   {
+    label: 'overloaded',
     status: HTTP_ANTHROPIC_OVERLOADED,
     bodies: {
       'openai-completions': {
@@ -198,9 +259,9 @@ const STATUS_CASES: readonly StatusCase[] = [
 
 const TRUNCATED_MODEL = 'truncated'
 
-/** The mock model that answers `api` requests with this upstream status. */
-function failingModel(api: Api, status: number): string {
-  return `${api}-${String(status)}`
+/** The mock model that answers `api` requests as this case says. */
+function failingModel(api: Api, statusCase: StatusCase): string {
+  return `${api}-${statusCase.label.replaceAll(' ', '-')}`
 }
 
 /** Starts a stream, sends these text deltas, then drops the connection: no finish, no `[DONE]`. */
@@ -222,10 +283,7 @@ beforeAll(async () => {
   const replies: Record<string, MockReply> = { [TRUNCATED_MODEL]: cutOff('Hel', 'lo') }
   for (const statusCase of STATUS_CASES) {
     for (const api of APIS) {
-      replies[failingModel(api, statusCase.status)] = httpError(
-        statusCase.status,
-        statusCase.bodies[api]
-      )
+      replies[failingModel(api, statusCase)] = httpError(statusCase.status, statusCase.bodies[api])
     }
   }
   mock = await startMockProvider(replies)
@@ -299,27 +357,26 @@ describe.each(APIS)('upstream HTTP error through %s', (api) => {
   // cannot back off from, an auth failure blamed on the client, an overload reported as a crash),
   // the provider's raw error text reaching the client, or pi starting to retry each failure.
   test.each(STATUS_CASES)(
-    'upstream $status is answered as $expected.status, in one attempt',
-    async ({ status, expected }) => {
-      const outcome = await chat(`${providerName}/${failingModel(api, status)}`, false)
+    '$label: upstream $status is answered as $expected.status, in one attempt',
+    async (statusCase) => {
+      const outcome = await chat(`${providerName}/${failingModel(api, statusCase)}`, false)
       const body: unknown = JSON.parse(outcome.text)
 
       expect({
         status: outcome.status,
         body,
         attempts: outcome.attempts
-      }).toEqual({ ...expected, attempts: 1 })
+      }).toEqual({ ...statusCase.expected, attempts: 1 })
     }
   )
 
   // Catches a failed stream that ends silently, or with a normal finish, instead of an error event
-  // and the `[DONE]` sentinel: a client would take the empty answer as complete. The message and
-  // code are not pinned: today the frame carries pi's raw message (the provider's whole error
-  // body) and always `upstream_error`, unlike the non-streaming mapping.
+  // and `[DONE]`; and an error frame that quotes the provider or carries a different code than the
+  // non-streaming answer (#54).
   test.each(STATUS_CASES)(
-    'upstream $status ends the stream with an error event',
-    async ({ status }) => {
-      const outcome = await chat(`${providerName}/${failingModel(api, status)}`, true)
+    '$label: upstream $status ends the stream with the same error, mapped',
+    async (statusCase) => {
+      const outcome = await chat(`${providerName}/${failingModel(api, statusCase)}`, true)
 
       expect({
         status: outcome.status,
@@ -329,17 +386,7 @@ describe.each(APIS)('upstream HTTP error through %s', (api) => {
       }).toEqual({
         status: HTTP_OK,
         contentType: 'text/event-stream',
-        events: [
-          {
-            error: {
-              message: expect.any(String),
-              type: 'server_error',
-              param: null,
-              code: expect.any(String)
-            }
-          },
-          '[DONE]'
-        ],
+        events: [statusCase.expected.body, '[DONE]'],
         attempts: 1
       })
     }
@@ -364,14 +411,7 @@ describe('upstream stream cut off before it finished', () => {
         textChunk(model, { role: 'assistant' }),
         textChunk(model, { content: 'Hel' }),
         textChunk(model, { content: 'lo' }),
-        {
-          error: {
-            message: 'terminated',
-            type: 'server_error',
-            param: null,
-            code: 'upstream_error'
-          }
-        },
+        PROVIDER_FAILED.body,
         '[DONE]'
       ],
       attempts: 1

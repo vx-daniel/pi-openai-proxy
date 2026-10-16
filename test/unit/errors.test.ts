@@ -82,6 +82,99 @@ describe('mapUpstreamError', () => {
     expect(JSON.stringify(mapped)).not.toContain(SECRET)
   })
 
+  const RATE_LIMITED = {
+    status: 429,
+    body: upstreamBody('Upstream rate limit exceeded', 'rate_limit')
+  }
+  const TIMED_OUT = { status: 504, body: upstreamBody('Upstream request timed out', 'timeout') }
+  const AUTH_FAILED = {
+    status: 502,
+    body: upstreamBody('Upstream authentication failed', 'upstream_auth_error')
+  }
+  const UNAVAILABLE = {
+    status: 503,
+    body: upstreamBody('Upstream provider is unavailable', 'provider_unavailable')
+  }
+  const PROVIDER_FAILED = {
+    status: 502,
+    body: upstreamBody('Upstream provider error', 'upstream_error')
+  }
+
+  // Catches the status read from the wrong place (#42): pi 1.3.0 reports it in fixed positions per
+  // SDK, and those decide over the wording; a number elsewhere in the text, or a word inside
+  // another word, must not.
+  test.each([
+    [
+      'OpenAI quota, no "rate limit" wording',
+      '429: {"message":"You exceeded your current quota","type":"insufficient_quota"}',
+      RATE_LIMITED
+    ],
+    [
+      'Anthropic 429 worded "Too many requests"',
+      '429 {"type":"error","error":{"type":"api_error","message":"Too many requests"}}',
+      RATE_LIMITED
+    ],
+    [
+      'a 401 whose text says "rate limit"',
+      '401: {"message":"Invalid key for the rate limit tier"}',
+      AUTH_FAILED
+    ],
+    [
+      'Responses/Azure with a label',
+      'OpenAI API error (429): {"message":"Slow down"}',
+      RATE_LIMITED
+    ],
+    [
+      // No wording any fallback matches: only the body's `code` can say this is an auth failure.
+      'Google error body',
+      '{"error":{"code":401,"message":"Request had invalid authentication credentials.","status":"UNAUTHENTICATED"}}',
+      AUTH_FAILED
+    ],
+    [
+      'Google mid-stream',
+      'got status: 503. {"error":{"code":503,"message":"The model is overloaded"}}',
+      UNAVAILABLE
+    ],
+    ['an upstream 504', '504: {"message":"Gateway Timeout"}', TIMED_OUT],
+    ['an upstream 408 with no body', '408 status code (no body)', TIMED_OUT],
+    ['an upstream 503 with a text body', '503 "upstream connect error"', UNAVAILABLE],
+    // A message that merely starts with a number is not reporting a status (PR #56 review).
+    ['a leading 429 that is a count', '429 tokens per minute exceeds your tier', PROVIDER_FAILED],
+    [
+      'a leading 401 that is a count',
+      '401 messages were sent in this conversation',
+      PROVIDER_FAILED
+    ],
+    // With no status, wording is checked in order: a rate limit is reported as one even when the
+    // same message also says something timed out.
+    ['rate limit before timeout, no status', 'Rate limit retry timed out', RATE_LIMITED],
+    ['an upstream 503', '503: {"message":"Service Unavailable"}', UNAVAILABLE],
+    [
+      'an upstream 500 that mentions a rate limit',
+      '500: {"message":"rate limiter crashed"}',
+      PROVIDER_FAILED
+    ],
+    [
+      '401 only as data, no status',
+      'Invalid prompt: 401 tokens over the 200000 limit',
+      PROVIDER_FAILED
+    ],
+    ['"generate" is not "rate"', 'Could not generate limit-compliant output', PROVIDER_FAILED],
+    [
+      'Bedrock throttling, no status',
+      'Too many requests, please wait before trying again.',
+      RATE_LIMITED
+    ],
+    [
+      'Bedrock unavailable, no status',
+      'ServiceUnavailableException: Service unavailable',
+      UNAVAILABLE
+    ],
+    ['a dropped connection', 'terminated', PROVIDER_FAILED]
+  ])('maps %s', (_case, upstreamMessage, expected) => {
+    expect(mapUpstreamError(new Error(upstreamMessage))).toEqual(expected)
+  })
+
   test('maps a thrown value that is not an Error to the generic 502', () => {
     expect(mapUpstreamError(`string error ${SECRET}`)).toEqual({
       status: 502,

@@ -65,9 +65,13 @@ async function* yieldEvents(
 }
 
 describe('streamToSSE', () => {
-  test('emits error frame instead of stop for upstream error events', async () => {
-    const errorMsg = makeErrorMessage('No API key for provider: openai')
-    const events: AssistantMessageEvent[] = [{ type: 'error', reason: 'error', error: errorMsg }]
+  // Catches an upstream failure ending the stream as a normal stop, without `[DONE]`, or with the
+  // upstream message in the frame instead of the fixed mapped text (#54).
+  test('emits the mapped error frame and [DONE] for an upstream error event', async () => {
+    const upstreamMessage = '401 {"error":{"message":"notarealsecret-quoted-in-error"}}'
+    const events: AssistantMessageEvent[] = [
+      { type: 'error', reason: 'error', error: makeErrorMessage(upstreamMessage) }
+    ]
 
     const frames: string[] = []
     for await (const frame of streamToSSE(
@@ -79,15 +83,10 @@ describe('streamToSSE', () => {
       frames.push(frame)
     }
 
-    // Should have error data frame + [DONE]
-    expect(frames).toHaveLength(2)
-    expect(frames[0]).toMatch(/^data: /)
-    expect(frames[1]).toBe('data: [DONE]\n\n')
-
-    // Error frame should contain the error message
-    const errorData = JSON.parse(frames[0]?.slice(6) ?? '')
-    expect(errorData.error.message).toBe('No API key for provider: openai')
-    expect(errorData.error.type).toBe('server_error')
+    expect(frames).toEqual([
+      `data: ${JSON.stringify({ error: { message: 'Upstream authentication failed', type: 'server_error', param: null, code: 'upstream_auth_error' } })}\n\n`,
+      'data: [DONE]\n\n'
+    ])
   })
 
   test('emits normal stop for successful done events', async () => {
