@@ -344,7 +344,7 @@ The toolchain is [Vite+](https://viteplus.dev) (`vp`); all config lives in `vite
 
 ```bash
 vp install            # Install dependencies (pnpm); also installs the Git hooks
-vp run dev            # Rebuild on change and restart the proxy
+vp run dev            # Rebuild on change and restart the proxy on port 4142 (PI_PROXY_DEV_PORT to change)
 pnpm run check:all    # The gate: format, lint + type check, tests, build
 vp check --fix        # Format and apply lint fixes
 vp test               # Run all tests (conformance tests need provider credentials)
