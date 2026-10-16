@@ -16,7 +16,7 @@ import type {
   ThinkingLevel
 } from '@earendil-works/pi-ai'
 import { proxyLogger } from '@proxy/logging'
-import type { ChatCompletionRequest, OpenAIFunctionTool } from '@proxy/openai/schemas'
+import type { ChatCompletionRequest } from '@proxy/openai/schemas'
 import { getRuntime } from '@proxy/pi/registry'
 import { relayUpstreamActivity, startUpstreamIdleTimeout } from '@proxy/pi/upstream-idle'
 import { isRecord } from '@proxy/utils/guards'
@@ -387,67 +387,6 @@ function passthroughStrategy(api: string): 'openai' | 'codex' | 'anthropic' | 'g
 }
 
 /**
- * Collect tool strict flags from the original OpenAI request.
- *
- * The pi SDK's `Tool` interface has no `strict` field, so the SDK always sets
- * `strict: false` when building the upstream payload. This function extracts
- * the per-tool strict flags from the original request so they can be restored
- * via `onPayload` after the SDK builds the payload.
- *
- * Returns a map of tool index -> true for tools that requested strict mode,
- * or undefined if no tools use strict mode.
- *
- * @internal Exported for unit testing only.
- */
-export function collectToolStrictFlags(
-  tools: OpenAIFunctionTool[] | undefined
-): ReadonlyMap<number, true> | undefined {
-  if (tools === undefined || tools.length === 0) {
-    return undefined
-  }
-
-  let flags: Map<number, true> | undefined
-
-  for (let toolIndex = 0; toolIndex < tools.length; toolIndex++) {
-    const tool = tools[toolIndex]
-    if (tool?.function.strict === true) {
-      flags ??= new Map()
-      flags.set(toolIndex, true)
-    }
-  }
-
-  return flags
-}
-
-/**
- * Apply strict flags to tool definitions in the upstream payload.
- *
- * The pi SDK always sets `strict: false` on tool definitions. This function
- * patches the payload's `tools` array to restore the client's requested
- * `strict: true` flags on the matching tool definitions.
- *
- * @internal Exported for unit testing only.
- */
-export function applyToolStrictFlags(
-  payload: Record<string, unknown>,
-  strictFlags: ReadonlyMap<number, true>
-): void {
-  const tools = payload['tools']
-  if (!Array.isArray(tools)) {
-    return
-  }
-  for (const [toolIndex, _flag] of strictFlags) {
-    const tool = tools[toolIndex] as unknown
-    if (isRecord(tool)) {
-      const fn = tool['function']
-      if (isRecord(fn)) {
-        fn['strict'] = true
-      }
-    }
-  }
-}
-
-/**
  * Options for building pi stream options, beyond the parsed request itself.
  */
 export interface CompletionOptions {
@@ -528,22 +467,20 @@ async function buildStreamOptions(
     opts.apiKey = options.upstreamApiKey
   }
 
-  // Inject passthrough fields and tool strict flags via onPayload
+  // Inject passthrough fields via onPayload. Tool `strict` is not patched here: convertTools
+  // maps it to pi's constrainedSampling, which each API adapter applies in its own shape.
   const payloadFields = collectPayloadFields(request, model.api)
-  const strictFlags = collectToolStrictFlags(request.tools)
   const needsGooglePatch = isGoogleApi(model.api)
   const payloadFieldNames = payloadFields === undefined ? [] : Object.keys(payloadFields)
-  const strictToolCount = strictFlags?.size ?? 0
 
   completeLogger.debug('Payload passthrough for {api}: {passthrough}', {
     api: model.api,
     passthrough: passthroughStrategy(model.api),
     payloadFields: payloadFieldNames,
-    strictToolCount,
     googlePatch: needsGooglePatch
   })
 
-  if (payloadFields !== undefined || strictFlags !== undefined || needsGooglePatch) {
+  if (payloadFields !== undefined || needsGooglePatch) {
     opts.onPayload = (payload: unknown) => {
       if (isRecord(payload)) {
         // Flat field injection (OpenAI-compatible and Anthropic)
@@ -554,15 +491,10 @@ async function buildStreamOptions(
         }
         // Google nested generationConfig patching
         const googlePatched = needsGooglePatch && patchGooglePayload(payload, request)
-        // Tool strict flag patching (OpenAI-compatible only)
-        if (strictFlags !== undefined) {
-          applyToolStrictFlags(payload, strictFlags)
-        }
         completeLogger.debug('Patched upstream payload for {api}', {
           api: model.api,
           patchedFields: payloadFieldNames,
-          googlePatched,
-          strictToolCount
+          googlePatched
         })
       } else {
         completeLogger.warn(

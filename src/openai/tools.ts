@@ -7,13 +7,22 @@
  * - Convert tool_choice to pi-compatible format
  */
 
-import type { Tool } from '@earendil-works/pi-ai'
+import type { ConstrainedSamplingConfig, Tool } from '@earendil-works/pi-ai'
 import { proxyLogger } from '@proxy/logging'
 import { jsonSchemaToTypebox } from '@proxy/openai/json-schema-to-typebox'
 import type { OpenAIFunctionTool } from '@proxy/openai/schemas'
 import { type TSchema, Type } from 'typebox'
 
 const toolsLogger = proxyLogger('openai', 'tools')
+
+/**
+ * pi's constrained sampling for a tool sent with `strict: true`. "prefer": strict wherever pi can
+ * make it so (the model is strict-capable and the schema fits the provider's strict subset);
+ * otherwise the tool is sent without strict, as before pi had this, rather than the request being
+ * refused. "require" would refuse every strict tool on the many models pi does not mark
+ * strict-capable, breaking clients that send `strict: true` by default (#44).
+ */
+const STRICT_SAMPLING: ConstrainedSamplingConfig = { type: 'json_schema', strict: 'prefer' }
 
 export interface ToolConversionSuccess {
   readonly ok: true
@@ -68,14 +77,18 @@ export function convertTools(openaiTools: OpenAIFunctionTool[]): ToolConversionR
     piTools.push({
       name: fn.name,
       description: fn.description ?? '',
-      parameters
+      parameters,
+      // `strict: true` asks for strict schema adherence: pi makes the schema strict in each API's
+      // own shape where it can (see STRICT_SAMPLING).
+      ...(fn.strict === true ? { constrainedSampling: STRICT_SAMPLING } : {})
     })
   }
 
   toolsLogger.debug('Converted {toolCount} tools', () => ({
     toolCount: piTools.length,
     toolNames: piTools.map((tool) => tool.name),
-    withoutParameters: openaiTools.filter((tool) => tool.function.parameters === undefined).length
+    withoutParameters: openaiTools.filter((tool) => tool.function.parameters === undefined).length,
+    strictToolCount: piTools.filter((tool) => tool.constrainedSampling !== undefined).length
   }))
 
   return { ok: true, tools: piTools }
