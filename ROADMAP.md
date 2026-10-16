@@ -90,6 +90,12 @@ Address issues found by code audit that violate the project's policy of rejectin
 - [x] Update PLAN.md known gaps section (tool_choice resolved, strict resolved, parallel_tool_calls analyzed)
 - [x] `anyOf` documentation was already correct (TODO item was stale)
 
+## Pi 1.x migration [DONE]
+
+- [x] Move to Pi 1.x (`ModelRuntime`); fixes the Claude Code client-version gate for Opus 5.5 and Fable 5.1
+- [x] `usage.prompt_tokens` counts cached tokens, with `prompt_tokens_details`
+- [ ] Run the conformance suite against live models on Pi 1.x
+
 ## Phase 3D — Compatibility analysis and resilience [DONE]
 
 Research-backed decisions on deferred compatibility and resilience items. Analysis: `docs/engineering/phase-3d-analysis.md`.

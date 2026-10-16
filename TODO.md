@@ -337,6 +337,15 @@ unsupported parameters clearly instead of silently ignoring them.
 - [x] `anyOf` is correctly listed as supported in PLAN.md (TODO item was stale)
 - [x] Update PLAN.md known gaps section to reflect resolved `tool_choice` and `strict` fixes
 
+## Pi 1.x migration [DONE]
+
+- [x] Depend on `@earendil-works/pi-*` `^1.3.0` (Pi 1.0 is the first release whose Anthropic client sends Claude Code 2.1.280, which Opus 5.5 requires)
+- [x] Replace `AuthStorage` + `ModelRegistry.create()` with the async `ModelRuntime`; completions run through it
+- [x] Map the `pending` and `deferred` stop reasons to `stop`
+- [x] Report cache reads and writes in `usage.prompt_tokens`, with `prompt_tokens_details`
+- [x] Refresh the extension's model registry on each entry point (`ctx.modelRegistry`)
+- [ ] Run the conformance suite against live models on Pi 1.x
+
 ## Phase 3D — Compatibility analysis and resilience [DONE]
 
 Analysis document: `docs/engineering/phase-3d-analysis.md`

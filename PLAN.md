@@ -209,13 +209,14 @@ Settings-panel requirements:
 
 Primary source:
 
-- pi `AuthStorage`
-- `ModelRegistry.getApiKeyAndHeaders(model)`
+- pi `ModelRuntime` (credentials, catalogs and request auth in one place; Pi 1.x replaced
+  `AuthStorage` and `ModelRegistry.getApiKeyAndHeaders()` with it)
 
-Request auth must be resolved per request and forwarded as both `apiKey` and
-`headers` where the Pi AI client supports it. This is required for current Pi
-because model-specific auth and headers can resolve dynamically on every
-request, including OAuth-backed providers and `authHeader`-driven providers.
+Completions run through `ModelRuntime.streamSimple()` / `completeSimple()`, which resolve
+request auth themselves on every request: API keys, OAuth with refresh, model-specific headers,
+provider environment and an auth-resolved base URL (`ModelRuntime.prepareRequest`). The proxy
+only pre-checks that auth resolves (`getRequestAuth()`), so a route can answer 401 before a
+response starts. A per-request `X-Pi-Upstream-Api-Key` overrides the resolved key.
 
 ### Per-request override
 
@@ -580,6 +581,9 @@ Usage policy:
 
 - if `stream_options.include_usage` is true, emit a final chunk with empty `choices` and populated `usage`
 - if the stream is interrupted, do not guarantee a final usage chunk
+- `usage.prompt_tokens` is the whole prompt: Pi's uncached `input` plus cache reads and cache
+  writes (Pi reports them separately, and OpenAI clients expect the whole prompt); the cached
+  parts are broken out in `usage.prompt_tokens_details.cached_tokens` and `cache_write_tokens`
 
 Reasoning policy:
 
@@ -721,8 +725,8 @@ src/
 │   ├── tools.ts                -- OpenAI function tools -> pi Tool[]
 │   └── json-schema-to-typebox.ts -- JSON Schema -> TypeBox conversion
 └── pi/
-    ├── registry.ts       -- AuthStorage + ModelRegistry init
-    └── complete.ts       -- completeSimple/streamSimple bridge
+    ├── registry.ts       -- ModelRuntime + SettingsManager init
+    └── complete.ts       -- ModelRuntime streamSimple/completeSimple bridge
 ```
 
 ### Dead code
@@ -766,12 +770,12 @@ Deliverable:
 Build:
 
 - project scaffolding (Bun, Hono, Zod v4, tsdown, Biome, oxlint, lefthook, commitlint)
-- `AuthStorage` and `ModelRegistry` integration
+- `ModelRuntime` integration
 - model resolution (canonical + shorthand with ambiguity detection)
 - `GET /v1/models`
 - `GET /v1/models/{model}` with encoded slash support
-- non-streaming chat completions via `completeSimple()`
-- streaming chat completions via `streamSimple()`
+- non-streaming chat completions via `ModelRuntime.completeSimple()`
+- streaming chat completions via `ModelRuntime.streamSimple()`
 - request IDs and structured logging
 - disconnect cancellation via AbortController
 - OpenAI-style errors
