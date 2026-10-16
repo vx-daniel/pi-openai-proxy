@@ -200,3 +200,22 @@ test(
   },
   END_TO_END_TIMEOUT_MS
 )
+
+/**
+ * stderr arrives in chunks, and a banner can straddle two of them; the scan keeps the tail of the
+ * previous chunk so the halves are matched together.
+ * Catches: dropping the chunk overlap, so a banner split across two writes passes as a clean run.
+ */
+test(
+  '⚠ a banner split across two stderr chunks is still an abort',
+  () => {
+    const run = runGateOver(
+      "printf 'fatal runtime ' >&2\nsleep 0.5\nprintf 'error: stack overflow, aborting\\n' >&2\nexit 0\n"
+    )
+    expect(run.status).toBe(1)
+    expect(run.stderr).toContain('fatal runtime error: stack overflow, aborting\n')
+    expect(run.output).toContain('ABORTED')
+    expect(run.output).not.toContain('All gates passed')
+  },
+  END_TO_END_TIMEOUT_MS
+)

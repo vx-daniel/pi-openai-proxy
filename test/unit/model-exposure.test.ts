@@ -230,14 +230,16 @@ describe('public ID modes -- with collisions', () => {
     if (!result.ok) return
 
     const publicIds = result.models.map((model) => model.publicId)
-    // openai and codex collide on "gpt-4o", so ALL their models get prefixed
-    expect(publicIds).toContain('openai/gpt-4o')
-    expect(publicIds).toContain('openai/gpt-4o-mini')
-    expect(publicIds).toContain('codex/gpt-4o')
-    expect(publicIds).toContain('codex/codex-unique')
-    // anthropic and google have no collisions, so raw IDs
-    expect(publicIds).toContain('claude-sonnet-4-20250514')
-    expect(publicIds).toContain('gemini-2.5-pro')
+    // Catches a model emitted under both its prefixed and raw ID, or a conflict-group model left
+    // raw. Order is part of the contract: exposeModels keeps the input order.
+    expect(publicIds).toEqual([
+      'openai/gpt-4o',
+      'openai/gpt-4o-mini',
+      'codex/gpt-4o',
+      'codex/codex-unique',
+      'claude-sonnet-4-20250514',
+      'gemini-2.5-pro'
+    ])
   })
 
   test('universal mode fails on collision', () => {

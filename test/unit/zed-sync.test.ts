@@ -20,6 +20,7 @@ import { configureLogging } from '@proxy/logging'
 import type { ExposedModel } from '@proxy/openai/model-exposure'
 import { findZedSettings, syncToZed, toZedModel } from '@proxy/sync/zed'
 import { isRecord } from '@proxy/utils/guards'
+import { type ParseError, parse } from 'jsonc-parser'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vite-plus/test'
 
 // ---------------------------------------------------------------------------
@@ -89,6 +90,41 @@ const MINIMAL_ZED_SETTINGS = `{
   "theme": "Gruvbox Dark"
 }
 `
+
+/** What `MINIMAL_ZED_SETTINGS` and `ZED_SETTINGS_WITH_COMMENTS` hold outside `language_models`. */
+const MINIMAL_OTHER_SETTINGS = { buffer_font_size: 15, theme: 'Gruvbox Dark' }
+
+const DEFAULT_API_URL = 'http://127.0.0.1:4141/v1'
+
+/** The Zed entry for `makeExposed()`. */
+const CLAUDE_ZED_MODEL = {
+  name: 'anthropic/claude-sonnet-4-20250514',
+  display_name: 'Claude Sonnet 4',
+  max_tokens: 200000,
+  max_output_tokens: 64000,
+  capabilities: {
+    tools: true,
+    images: true,
+    parallel_tool_calls: true,
+    prompt_cache_key: false,
+    chat_completions: true
+  }
+}
+
+/** `language_models` holding only the "Pi Proxy" provider block. */
+function piProxyModels(apiUrl: string, availableModels: readonly unknown[]): unknown {
+  return {
+    openai_compatible: { 'Pi Proxy': { api_url: apiUrl, available_models: availableModels } }
+  }
+}
+
+/** The settings file as Zed reads it: JSONC with trailing commas. A syntax error fails the test. */
+function writtenSettings(path: string): unknown {
+  const errors: ParseError[] = []
+  const settings: unknown = parse(readFileSync(path, 'utf-8'), errors, { allowTrailingComma: true })
+  expect(errors).toEqual([])
+  return settings
+}
 
 // ---------------------------------------------------------------------------
 // toZedModel
@@ -234,6 +270,7 @@ describe('syncToZed', () => {
     rmSync(tempDir, { recursive: true, force: true })
   })
 
+  // Catches models missing, misordered or mis-mapped in the written file, or the old ones kept.
   test('syncs models into existing provider block', () => {
     writeFileSync(settingsPath, ZED_SETTINGS_WITH_COMMENTS)
 
@@ -265,11 +302,25 @@ describe('syncToZed', () => {
     expect(result.removed).toBe(1)
     expect(result.configPath).toBe(settingsPath)
 
-    // Verify the file was written
-    const content = readFileSync(settingsPath, 'utf-8')
-    expect(content).toContain('claude-sonnet-4-20250514')
-    expect(content).toContain('gpt-5.4-mini')
-    expect(content).not.toContain('old-model')
+    expect(writtenSettings(settingsPath)).toEqual({
+      ...MINIMAL_OTHER_SETTINGS,
+      language_models: piProxyModels(DEFAULT_API_URL, [
+        CLAUDE_ZED_MODEL,
+        {
+          name: 'openai/gpt-5.4-mini',
+          display_name: 'GPT-5.4 Mini',
+          max_tokens: 128000,
+          max_output_tokens: 32000,
+          capabilities: {
+            tools: true,
+            images: false,
+            parallel_tool_calls: true,
+            prompt_cache_key: false,
+            chat_completions: true
+          }
+        }
+      ])
+    })
   })
 
   test('preserves JSONC comments', () => {
@@ -288,12 +339,14 @@ describe('syncToZed', () => {
     expect(content).toContain('// Theme')
   })
 
-  test('creates provider block when it does not exist', () => {
+  // Catches the provider block not created, created at the wrong path, or written without the
+  // requested api_url, in settings without one.
+  test('creates provider block with the requested api_url when it does not exist', () => {
     writeFileSync(settingsPath, MINIMAL_ZED_SETTINGS)
 
     const result = syncToZed([makeExposed()], {
       providerName: 'Pi Proxy',
-      apiUrl: 'http://127.0.0.1:4141/v1',
+      apiUrl: 'http://192.168.1.100:8080/v1',
       dryRun: false
     })
 
@@ -301,11 +354,10 @@ describe('syncToZed', () => {
     expect(result.added).toBe(1)
     expect(result.removed).toBe(0)
 
-    const content = readFileSync(settingsPath, 'utf-8')
-    expect(content).toContain('language_models')
-    expect(content).toContain('openai_compatible')
-    expect(content).toContain('Pi Proxy')
-    expect(content).toContain('claude-sonnet-4-20250514')
+    expect(writtenSettings(settingsPath)).toEqual({
+      ...MINIMAL_OTHER_SETTINGS,
+      language_models: piProxyModels('http://192.168.1.100:8080/v1', [CLAUDE_ZED_MODEL])
+    })
   })
 
   test('dry-run does not write to disk', () => {
@@ -373,6 +425,7 @@ describe('syncToZed', () => {
     expect(result.unchanged).toBe(1)
   })
 
+  // Catches an empty sync leaving the old models in place, or deleting the provider block.
   test('handles empty model list (removes all)', () => {
     writeFileSync(settingsPath, ZED_SETTINGS_WITH_COMMENTS)
 
@@ -386,9 +439,10 @@ describe('syncToZed', () => {
     expect(result.removed).toBe(1)
     expect(result.added).toBe(0)
 
-    const content = readFileSync(settingsPath, 'utf-8')
-    expect(content).toContain('available_models')
-    expect(content).not.toContain('old-model')
+    expect(writtenSettings(settingsPath)).toEqual({
+      ...MINIMAL_OTHER_SETTINGS,
+      language_models: piProxyModels(DEFAULT_API_URL, [])
+    })
   })
 
   test('returns error when settings file not found', () => {
@@ -405,20 +459,7 @@ describe('syncToZed', () => {
     expect(result.error).toContain('not found')
   })
 
-  test('preserves other settings outside language_models', () => {
-    writeFileSync(settingsPath, ZED_SETTINGS_WITH_COMMENTS)
-
-    syncToZed([makeExposed()], {
-      providerName: 'Pi Proxy',
-      apiUrl: 'http://127.0.0.1:4141/v1',
-      dryRun: false
-    })
-
-    const content = readFileSync(settingsPath, 'utf-8')
-    expect(content).toContain('"buffer_font_size": 15')
-    expect(content).toContain('"theme": "Gruvbox Dark"')
-  })
-
+  // Catches the sync replacing the whole openai_compatible map, dropping other providers.
   test('preserves other providers in openai_compatible', () => {
     const settingsWithMultipleProviders = `{
   "language_models": {
@@ -447,24 +488,17 @@ describe('syncToZed', () => {
       dryRun: false
     })
 
-    const content = readFileSync(settingsPath, 'utf-8')
-    expect(content).toContain('Other Provider')
-    expect(content).toContain('other-model')
-    expect(content).toContain('claude-sonnet-4-20250514')
-    expect(content).not.toContain('old-model')
-  })
-
-  test('writes correct api_url into provider block', () => {
-    writeFileSync(settingsPath, MINIMAL_ZED_SETTINGS)
-
-    syncToZed([makeExposed()], {
-      providerName: 'Pi Proxy',
-      apiUrl: 'http://192.168.1.100:8080/v1',
-      dryRun: false
+    expect(writtenSettings(settingsPath)).toEqual({
+      language_models: {
+        openai_compatible: {
+          'Other Provider': {
+            api_url: 'https://other.example.com/v1',
+            available_models: [{ name: 'other-model', max_tokens: 4096 }]
+          },
+          'Pi Proxy': { api_url: DEFAULT_API_URL, available_models: [CLAUDE_ZED_MODEL] }
+        }
+      }
     })
-
-    const content = readFileSync(settingsPath, 'utf-8')
-    expect(content).toContain('http://192.168.1.100:8080/v1')
   })
 
   describe('when the settings file is not valid JSONC', () => {
@@ -527,11 +561,11 @@ describe('syncToZed', () => {
     // Catches the check being stricter than Zed: trailing commas are valid Zed settings, and a
     // file with no value at all (new, emptied, or only comments) is empty settings, not broken.
     test.each([
-      ['trailing commas', '{\n  "theme": "One Dark",\n}\n'],
-      ['an empty file', ''],
-      ['a blank file', '  \n\n'],
-      ['only comments', '// Zed settings\n// nothing yet\n']
-    ])('still syncs a file with %s', (_case, text) => {
+      ['trailing commas', '{\n  "theme": "One Dark",\n}\n', { theme: 'One Dark' }],
+      ['an empty file', '', {}],
+      ['a blank file', '  \n\n', {}],
+      ['only comments', '// Zed settings\n// nothing yet\n', {}]
+    ])('still syncs a file with %s', (_case, text, otherSettings) => {
       writeFileSync(settingsPath, text)
 
       const result = syncToZed([makeExposed()], {
@@ -541,7 +575,10 @@ describe('syncToZed', () => {
       })
 
       expect(result.ok).toBe(true)
-      expect(readFileSync(settingsPath, 'utf-8')).toContain('"Pi Proxy"')
+      expect(writtenSettings(settingsPath)).toEqual({
+        ...otherSettings,
+        language_models: piProxyModels(DEFAULT_API_URL, [CLAUDE_ZED_MODEL])
+      })
       expect(errors).toEqual([])
     })
   })
