@@ -13,7 +13,7 @@ const EXPOSED_PREVIEW_COUNT = 5
 
 // --- /proxy show ---
 
-export async function showConfig(state: ProxyState, ctx: ExtensionContext): Promise<void> {
+export async function showConfig(state: ProxyState, context: ExtensionContext): Promise<void> {
   state.config = loadConfigFromFile()
   const { config } = state
   const authDisplay =
@@ -48,7 +48,9 @@ export async function showConfig(state: ProxyState, ctx: ExtensionContext): Prom
 
   const prefixKeys = Object.keys(config.providerPrefixes)
   if (prefixKeys.length > 0) {
-    const pairs = prefixKeys.map((k) => `${k}=${config.providerPrefixes[k] ?? k}`)
+    const pairs = prefixKeys.map(
+      (providerName) => `${providerName}=${config.providerPrefixes[providerName] ?? providerName}`
+    )
     exposureLines.push(`prefixes: ${pairs.join(', ')}`)
   }
 
@@ -56,7 +58,7 @@ export async function showConfig(state: ProxyState, ctx: ExtensionContext): Prom
   const models = getAvailableModels(state)
   const outcome = computeModelExposure(models, await buildExposureConfig(state))
   if (outcome.ok && outcome.models.length > 0) {
-    const preview = outcome.models.slice(0, EXPOSED_PREVIEW_COUNT).map((m) => m.publicId)
+    const preview = outcome.models.slice(0, EXPOSED_PREVIEW_COUNT).map((model) => model.publicId)
     const hidden = outcome.models.length - EXPOSED_PREVIEW_COUNT
     const suffix = hidden > 0 ? ` (+${String(hidden)} more)` : ''
     exposureLines.push(`exposed: ${preview.join(', ')}${suffix}`)
@@ -66,33 +68,33 @@ export async function showConfig(state: ProxyState, ctx: ExtensionContext): Prom
     exposureLines.push(`error: ${outcome.message}`)
   }
 
-  ctx.ui.notify(`${serverLines.join(' | ')}\n${exposureLines.join(' | ')}`, 'info')
+  context.ui.notify(`${serverLines.join(' | ')}\n${exposureLines.join(' | ')}`, 'info')
 }
 
 // --- /proxy models ---
 
-export async function showModels(state: ProxyState, ctx: ExtensionContext): Promise<void> {
+export async function showModels(state: ProxyState, context: ExtensionContext): Promise<void> {
   state.config = loadConfigFromFile()
   const models = getAvailableModels(state)
   const outcome = computeModelExposure(models, await buildExposureConfig(state))
 
   if (!outcome.ok) {
-    ctx.ui.notify(`Model exposure error: ${outcome.message}`, 'warning')
+    context.ui.notify(`Model exposure error: ${outcome.message}`, 'warning')
     return
   }
 
   if (outcome.models.length === 0) {
-    ctx.ui.notify('No models exposed. Check /proxy verify for details.', 'info')
+    context.ui.notify('No models exposed. Check /proxy verify for details.', 'info')
     return
   }
 
   // Group models by provider for readable output
   const byProvider = new Map<string, { publicId: string; canonicalId: string }[]>()
-  for (const m of outcome.models) {
-    const list = byProvider.get(m.provider)
-    const entry = { publicId: m.publicId, canonicalId: m.canonicalId }
+  for (const model of outcome.models) {
+    const list = byProvider.get(model.provider)
+    const entry = { publicId: model.publicId, canonicalId: model.canonicalId }
     if (list === undefined) {
-      byProvider.set(m.provider, [entry])
+      byProvider.set(model.provider, [entry])
     } else {
       list.push(entry)
     }
@@ -100,23 +102,23 @@ export async function showModels(state: ProxyState, ctx: ExtensionContext): Prom
 
   const sections: string[] = []
   for (const [provider, entries] of byProvider) {
-    const lines = entries.map((e) => {
+    const lines = entries.map((modelEntry) => {
       // Only show canonical ID when it differs from the public ID
-      if (e.publicId === e.canonicalId) {
-        return `  ${e.publicId}`
+      if (modelEntry.publicId === modelEntry.canonicalId) {
+        return `  ${modelEntry.publicId}`
       }
-      return `  ${e.publicId}  (${e.canonicalId})`
+      return `  ${modelEntry.publicId}  (${modelEntry.canonicalId})`
     })
     sections.push(`${provider} (${String(entries.length)}):\n${lines.join('\n')}`)
   }
 
   const header = `${String(outcome.models.length)} exposed model(s)`
-  ctx.ui.notify(`${header}\n\n${sections.join('\n\n')}`, 'info')
+  context.ui.notify(`${header}\n\n${sections.join('\n\n')}`, 'info')
 }
 
 // --- /proxy verify ---
 
-export async function verifyExposure(state: ProxyState, ctx: ExtensionContext): Promise<void> {
+export async function verifyExposure(state: ProxyState, context: ExtensionContext): Promise<void> {
   state.config = loadConfigFromFile()
   const { config } = state
   const models = getAvailableModels(state)
@@ -129,10 +131,10 @@ export async function verifyExposure(state: ProxyState, ctx: ExtensionContext): 
 
   // Check custom models reference valid canonical IDs
   if (config.modelExposureMode === 'custom') {
-    const canonicalSet = new Set(models.map((m) => `${m.provider}/${m.id}`))
-    for (const id of config.customModels) {
-      if (!canonicalSet.has(id)) {
-        issues.push(`Custom model '${id}' is not available (no auth or unknown).`)
+    const canonicalSet = new Set(models.map((model) => `${model.provider}/${model.id}`))
+    for (const canonicalId of config.customModels) {
+      if (!canonicalSet.has(canonicalId)) {
+        issues.push(`Custom model '${canonicalId}' is not available (no auth or unknown).`)
       }
     }
     if (config.customModels.length === 0) {
@@ -148,9 +150,9 @@ export async function verifyExposure(state: ProxyState, ctx: ExtensionContext): 
 
   if (issues.length === 0) {
     const count = outcome.ok ? outcome.models.length : 0
-    ctx.ui.notify(`Verification passed. ${String(count)} models exposed.`, 'info')
+    context.ui.notify(`Verification passed. ${String(count)} models exposed.`, 'info')
   } else {
-    ctx.ui.notify(
+    context.ui.notify(
       `Verification found ${String(issues.length)} issue(s):\n${issues.join('\n')}`,
       'warning'
     )

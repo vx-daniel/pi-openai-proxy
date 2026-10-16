@@ -119,11 +119,12 @@ export function buildChatCompletion(
   message: AssistantMessage
 ): OpenAIChatCompletion {
   // Extract text content
-  const textParts = message.content.filter((c): c is TextContent => c.type === 'text')
-  const textContent = textParts.length > 0 ? textParts.map((t) => t.text).join('') : null
+  const textParts = message.content.filter((part): part is TextContent => part.type === 'text')
+  const textContent =
+    textParts.length > 0 ? textParts.map((textPart) => textPart.text).join('') : null
 
   // Extract tool calls
-  const toolCallParts = message.content.filter((c): c is ToolCall => c.type === 'toolCall')
+  const toolCallParts = message.content.filter((part): part is ToolCall => part.type === 'toolCall')
   const toolCalls: OpenAIToolCall[] = toolCallParts.map((tc) => ({
     id: tc.id,
     type: 'function' as const,

@@ -64,8 +64,8 @@ export function getAvailableModels(): Model<Api>[] {
  */
 export async function getRequestAuth(model: Model<Api>): Promise<RequestAuthResult> {
   try {
-    const auth = await getRuntime().getAuth(model)
-    if (auth === undefined) {
+    const credentials = await getRuntime().getAuth(model)
+    if (credentials === undefined) {
       return { ok: false, error: `no credentials configured for provider '${model.provider}'` }
     }
     return { ok: true }

@@ -19,10 +19,10 @@ beforeAll(async () => {
 
 describe('GET /v1/models', () => {
   test('returns OpenAI-compatible list shape', async () => {
-    const res = await app.request('/v1/models')
-    expect(res.status).toBe(200)
+    const response = await app.request('/v1/models')
+    expect(response.status).toBe(200)
 
-    const body = await jsonBody(res)
+    const body = await jsonBody(response)
     expect(isModelListBody(body)).toBe(true)
     if (!isModelListBody(body)) return
 
@@ -50,10 +50,10 @@ describe('GET /v1/models', () => {
     const publicId = first.id
     const encodedId = encodeURIComponent(publicId)
 
-    const res = await app.request(`/v1/models/${encodedId}`)
-    expect(res.status).toBe(200)
+    const response = await app.request(`/v1/models/${encodedId}`)
+    expect(response.status).toBe(200)
 
-    const body = await jsonBody(res)
+    const body = await jsonBody(response)
     expect(isModelObject(body)).toBe(true)
     if (!isModelObject(body)) return
 
@@ -79,10 +79,10 @@ describe('GET /v1/models/:model', () => {
     const publicId = first.id
     const encodedId = encodeURIComponent(publicId)
 
-    const res = await app.request(`/v1/models/${encodedId}`)
-    expect(res.status).toBe(200)
+    const response = await app.request(`/v1/models/${encodedId}`)
+    expect(response.status).toBe(200)
 
-    const body = await jsonBody(res)
+    const body = await jsonBody(response)
     expect(isModelObject(body)).toBe(true)
     if (!isModelObject(body)) return
 
@@ -100,10 +100,10 @@ describe('GET /v1/models/:model', () => {
     const canonicalId = `${first.provider}/${first.id}`
     const encodedId = encodeURIComponent(canonicalId)
 
-    const res = await app.request(`/v1/models/${encodedId}`)
-    expect(res.status).toBe(200)
+    const response = await app.request(`/v1/models/${encodedId}`)
+    expect(response.status).toBe(200)
 
-    const body = await jsonBody(res)
+    const body = await jsonBody(response)
     expect(isModelObject(body)).toBe(true)
     if (!isModelObject(body)) return
 
@@ -119,10 +119,10 @@ describe('GET /v1/models/:model', () => {
     if (first === undefined) return
     const canonicalId = `${first.provider}/${first.id}`
 
-    const res = await app.request(`/v1/models/${canonicalId}`)
-    expect(res.status).toBe(200)
+    const response = await app.request(`/v1/models/${canonicalId}`)
+    expect(response.status).toBe(200)
 
-    const body = await jsonBody(res)
+    const body = await jsonBody(response)
     expect(isModelObject(body)).toBe(true)
     if (!isModelObject(body)) return
 
@@ -130,10 +130,10 @@ describe('GET /v1/models/:model', () => {
   })
 
   test('returns 404 for unknown model', async () => {
-    const res = await app.request('/v1/models/nonexistent%2Fmodel')
-    expect(res.status).toBe(404)
+    const response = await app.request('/v1/models/nonexistent%2Fmodel')
+    expect(response.status).toBe(404)
 
-    const body = await jsonBody(res)
+    const body = await jsonBody(response)
     expect(isErrorBody(body)).toBe(true)
     if (!isErrorBody(body)) return
 

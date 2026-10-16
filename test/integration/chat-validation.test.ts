@@ -19,31 +19,31 @@ beforeAll(async () => {
 
 describe('POST /v1/chat/completions - validation', () => {
   test('rejects invalid JSON', async () => {
-    const res = await app.request('/v1/chat/completions', {
+    const response = await app.request('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: 'not json'
     })
-    expect(res.status).toBe(400)
-    const body = await jsonBody(res)
+    expect(response.status).toBe(400)
+    const body = await jsonBody(response)
     expect(isErrorBody(body)).toBe(true)
     if (!isErrorBody(body)) return
     expect(body.error.type).toBe('invalid_request_error')
   })
 
   test('rejects missing model', async () => {
-    const res = await app.request('/v1/chat/completions', {
+    const response = await app.request('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         messages: [{ role: 'user', content: 'Hello' }]
       })
     })
-    expect(res.status).toBe(400)
+    expect(response.status).toBe(400)
   })
 
   test('rejects empty messages', async () => {
-    const res = await app.request('/v1/chat/completions', {
+    const response = await app.request('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -51,11 +51,11 @@ describe('POST /v1/chat/completions - validation', () => {
         messages: []
       })
     })
-    expect(res.status).toBe(400)
+    expect(response.status).toBe(400)
   })
 
   test('accepts tools in Phase 2', async () => {
-    const res = await app.request('/v1/chat/completions', {
+    const response = await app.request('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -77,7 +77,7 @@ describe('POST /v1/chat/completions - validation', () => {
         ]
       })
     })
-    expect(res.status).toBe(404)
+    expect(response.status).toBe(404)
   })
 
   test('rejects unsupported tool schemas with 422', async () => {
@@ -88,7 +88,7 @@ describe('POST /v1/chat/completions - validation', () => {
     if (first === undefined) return
     const canonicalId = `${first.provider}/${first.id}`
 
-    const res = await app.request('/v1/chat/completions', {
+    const response = await app.request('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -110,25 +110,26 @@ describe('POST /v1/chat/completions - validation', () => {
         ]
       })
     })
-    expect(res.status).toBe(422)
-    const body = await jsonBody(res)
+    expect(response.status).toBe(422)
+    const body = await jsonBody(response)
     expect(isErrorBody(body)).toBe(true)
     if (!isErrorBody(body)) return
     expect(body.error.code).toBe('unsupported_parameter')
   })
 
   test('rejects permanently rejected fields with 422', async () => {
-    const res = await app.request('/v1/chat/completions', {
+    const response = await app.request('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'openai/gpt-4o',
         messages: [{ role: 'user', content: 'Hello' }],
+        // oxlint-disable-next-line naming/no-single-char-keys -- "n" is OpenAI's request parameter under test
         n: 2
       })
     })
-    expect(res.status).toBe(422)
-    const body = await jsonBody(res)
+    expect(response.status).toBe(422)
+    const body = await jsonBody(response)
     expect(isErrorLike(body)).toBe(true)
     if (!isErrorLike(body)) return
     const param = (body.error as Record<string, unknown>)['param']
@@ -136,7 +137,7 @@ describe('POST /v1/chat/completions - validation', () => {
   })
 
   test('rejects unknown fields with 422', async () => {
-    const res = await app.request('/v1/chat/completions', {
+    const response = await app.request('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -145,11 +146,11 @@ describe('POST /v1/chat/completions - validation', () => {
         totally_made_up: true
       })
     })
-    expect(res.status).toBe(422)
+    expect(response.status).toBe(422)
   })
 
   test('returns 404 for non-existent model', async () => {
-    const res = await app.request('/v1/chat/completions', {
+    const response = await app.request('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -157,15 +158,15 @@ describe('POST /v1/chat/completions - validation', () => {
         messages: [{ role: 'user', content: 'Hello' }]
       })
     })
-    expect(res.status).toBe(404)
-    const body = await jsonBody(res)
+    expect(response.status).toBe(404)
+    const body = await jsonBody(response)
     expect(isErrorBody(body)).toBe(true)
     if (!isErrorBody(body)) return
     expect(body.error.code).toBe('model_not_found')
   })
 
   test('returns request-id header', async () => {
-    const res = await app.request('/v1/chat/completions', {
+    const response = await app.request('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -173,13 +174,13 @@ describe('POST /v1/chat/completions - validation', () => {
         messages: [{ role: 'user', content: 'Hello' }]
       })
     })
-    const requestId = res.headers.get('x-request-id')
+    const requestId = response.headers.get('x-request-id')
     expect(requestId).toBeDefined()
     expect(requestId).toMatch(/^piproxy-/)
   })
 
   test('echoes x-client-request-id', async () => {
-    const res = await app.request('/v1/chat/completions', {
+    const response = await app.request('/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -190,7 +191,7 @@ describe('POST /v1/chat/completions - validation', () => {
         messages: [{ role: 'user', content: 'Hello' }]
       })
     })
-    expect(res.headers.get('x-client-request-id')).toBe('client-123')
+    expect(response.headers.get('x-client-request-id')).toBe('client-123')
   })
 })
 
@@ -201,7 +202,7 @@ describe('POST /v1/chat/completions - proxy auth', () => {
       proxyAuthToken: 'secret-token'
     })
 
-    const res = await authedApp.request('/v1/chat/completions', {
+    const response = await authedApp.request('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -209,7 +210,7 @@ describe('POST /v1/chat/completions - proxy auth', () => {
         messages: [{ role: 'user', content: 'Hello' }]
       })
     })
-    expect(res.status).toBe(401)
+    expect(response.status).toBe(401)
   })
 
   test('accepts requests with correct proxy auth', async () => {
@@ -218,7 +219,7 @@ describe('POST /v1/chat/completions - proxy auth', () => {
       proxyAuthToken: 'secret-token'
     })
 
-    const res = await authedApp.request('/v1/chat/completions', {
+    const response = await authedApp.request('/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -229,7 +230,7 @@ describe('POST /v1/chat/completions - proxy auth', () => {
         messages: [{ role: 'user', content: 'Hello' }]
       })
     })
-    expect(res.status).toBe(404)
+    expect(response.status).toBe(404)
   })
 })
 
@@ -240,7 +241,7 @@ describe('POST /v1/chat/completions - body size limit', () => {
       maxBodySize: 100
     })
 
-    const res = await smallLimitApp.request('/v1/chat/completions', {
+    const response = await smallLimitApp.request('/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -251,15 +252,15 @@ describe('POST /v1/chat/completions - body size limit', () => {
         messages: [{ role: 'user', content: 'a'.repeat(150) }]
       })
     })
-    expect(res.status).toBe(413)
-    const body = await jsonBody(res)
+    expect(response.status).toBe(413)
+    const body = await jsonBody(response)
     expect(isErrorLike(body)).toBe(true)
     if (!isErrorLike(body)) return
     expect(body.error.message).toContain('too large')
   })
 
   test('allows requests within body size limit', async () => {
-    const res = await app.request('/v1/chat/completions', {
+    const response = await app.request('/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -270,7 +271,7 @@ describe('POST /v1/chat/completions - body size limit', () => {
         messages: [{ role: 'user', content: 'Hello' }]
       })
     })
-    expect(res.status).not.toBe(413)
+    expect(response.status).not.toBe(413)
   })
 
   test('does not apply body size limit to GET requests', async () => {
@@ -279,19 +280,19 @@ describe('POST /v1/chat/completions - body size limit', () => {
       maxBodySize: 10
     })
 
-    const res = await smallLimitApp.request('/v1/models', {
+    const response = await smallLimitApp.request('/v1/models', {
       method: 'GET',
       headers: {
         'Content-Length': '999999'
       }
     })
-    expect(res.status).toBe(200)
+    expect(response.status).toBe(200)
   })
 })
 
 describe('POST /v1/chat/completions - upstream API key override', () => {
   test('accepts X-Pi-Upstream-Api-Key header without error', async () => {
-    const res = await app.request('/v1/chat/completions', {
+    const response = await app.request('/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -302,7 +303,7 @@ describe('POST /v1/chat/completions - upstream API key override', () => {
         messages: [{ role: 'user', content: 'Hello' }]
       })
     })
-    expect(res.status).toBe(404)
+    expect(response.status).toBe(404)
   })
 })
 
@@ -310,9 +311,9 @@ describe('unsupported endpoints', () => {
   const endpoints = ['/v1/completions', '/v1/embeddings', '/v1/assistants']
 
   test.each(endpoints)('returns 404 for %s', async (endpoint) => {
-    const res = await app.request(endpoint, { method: 'POST' })
-    expect(res.status).toBe(404)
-    const body = await jsonBody(res)
+    const response = await app.request(endpoint, { method: 'POST' })
+    expect(response.status).toBe(404)
+    const body = await jsonBody(response)
     expect(isErrorLike(body)).toBe(true)
     if (!isErrorLike(body)) return
     expect(body.error.message).toContain('not supported')

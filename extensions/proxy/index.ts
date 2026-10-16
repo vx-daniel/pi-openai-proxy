@@ -65,7 +65,7 @@ const USAGE =
 
 type SubcommandHandler = (
   state: ProxyState,
-  ctx: ExtensionCommandContext,
+  context: ExtensionCommandContext,
   args: string
 ) => Promise<void> | void
 
@@ -79,28 +79,28 @@ const SUBCOMMAND_HANDLERS: Record<string, SubcommandHandler> = {
   'models': showModels,
   'zed-sync': handleZedSync,
   'show': showConfig,
-  'path': (_state, ctx) => {
-    ctx.ui.notify(getConfigPath(), 'info')
+  'path': (_state, context) => {
+    context.ui.notify(getConfigPath(), 'info')
   },
-  'reset': (state, ctx) => {
+  'reset': (state, context) => {
     state.config = { ...DEFAULT_CONFIG }
     saveConfigToFile(state.config)
-    ctx.ui.notify('Proxy settings reset to defaults', 'info')
+    context.ui.notify('Proxy settings reset to defaults', 'info')
   },
-  'help': (_state, ctx) => {
-    ctx.ui.notify(USAGE, 'info')
+  'help': (_state, context) => {
+    context.ui.notify(USAGE, 'info')
   }
 }
 
 async function openSettingsPanelIfInteractive(
   state: ProxyState,
-  ctx: ExtensionCommandContext
+  context: ExtensionCommandContext
 ): Promise<void> {
-  if (!ctx.hasUI) {
-    ctx.ui.notify('/proxy requires interactive mode. Use /proxy show instead.', 'warning')
+  if (!context.hasUI) {
+    context.ui.notify('/proxy requires interactive mode. Use /proxy show instead.', 'warning')
     return
   }
-  await openSettingsPanel(state, ctx)
+  await openSettingsPanel(state, context)
 }
 
 export default function proxyExtension(pi: ExtensionAPI): void {
@@ -110,11 +110,11 @@ export default function proxyExtension(pi: ExtensionAPI): void {
 
   // --- Lifecycle ---
 
-  pi.on('session_start', async (_event, ctx) => {
-    await useModelRegistry(state, ctx)
+  pi.on('session_start', async (_event, context) => {
+    await useModelRegistry(state, context)
     state.config = loadConfigFromFile()
-    await maybeAutoSyncZed(state, ctx)
-    await refreshStatus(state, ctx)
+    await maybeAutoSyncZed(state, context)
+    await refreshStatus(state, context)
   })
 
   pi.on('session_shutdown', async () => {
@@ -127,23 +127,25 @@ export default function proxyExtension(pi: ExtensionAPI): void {
     description: 'Manage the OpenAI-compatible proxy',
     getArgumentCompletions: (prefix) => {
       const trimmed = prefix.trimStart()
-      const matches = SUBCOMMANDS.filter((s) => s.startsWith(trimmed))
-      return matches.length > 0 ? matches.map((value) => ({ value, label: value })) : null
+      const matches = SUBCOMMANDS.filter((subcommand) => subcommand.startsWith(trimmed))
+      return matches.length > 0
+        ? matches.map((subcommand) => ({ value: subcommand, label: subcommand }))
+        : null
     },
-    handler: async (args, ctx) => {
-      await useModelRegistry(state, ctx)
+    handler: async (args, context) => {
+      await useModelRegistry(state, context)
       const sub = args.trim().split(/\s+/)[0] ?? ''
 
       if (sub === '' || sub === 'config') {
-        await openSettingsPanelIfInteractive(state, ctx)
+        await openSettingsPanelIfInteractive(state, context)
         return
       }
       const run = Object.hasOwn(SUBCOMMAND_HANDLERS, sub) ? SUBCOMMAND_HANDLERS[sub] : undefined
       if (run === undefined) {
-        ctx.ui.notify(USAGE, 'warning')
+        context.ui.notify(USAGE, 'warning')
         return
       }
-      await run(state, ctx, args)
+      await run(state, context, args)
     }
   })
 }

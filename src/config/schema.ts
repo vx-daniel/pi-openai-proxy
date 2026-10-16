@@ -132,9 +132,9 @@ export function isModelExposureMode(value: string): value is ModelExposureMode {
 function normalizeStringArray(raw: unknown): string[] {
   if (!Array.isArray(raw)) return []
   const result: string[] = []
-  for (const item of raw) {
-    if (typeof item === 'string' && item.length > 0) {
-      result.push(item)
+  for (const candidate of raw) {
+    if (typeof candidate === 'string' && candidate.length > 0) {
+      result.push(candidate)
     }
   }
   return result
@@ -143,35 +143,40 @@ function normalizeStringArray(raw: unknown): string[] {
 function normalizeStringRecord(raw: unknown): Record<string, string> {
   if (!isRecord(raw)) return {}
   const result: Record<string, string> = {}
-  for (const [key, val] of Object.entries(raw)) {
-    if (typeof val === 'string' && val.length > 0) {
-      result[key] = val
+  for (const [key, candidate] of Object.entries(raw)) {
+    if (typeof candidate === 'string' && candidate.length > 0) {
+      result[key] = candidate
     }
   }
   return result
 }
 
 export function normalizeConfig(raw: unknown): ProxyConfig {
-  const v = isRecord(raw) ? raw : {}
-  const rawHost = v['host']
-  const rawAuthToken = v['authToken']
-  const rawRemoteImages = v['remoteImages']
-  const rawPublicIdMode = v['publicModelIdMode']
-  const rawExposureMode = v['modelExposureMode']
+  const configObject = isRecord(raw) ? raw : {}
+  const rawHost = configObject['host']
+  const rawAuthToken = configObject['authToken']
+  const rawRemoteImages = configObject['remoteImages']
+  const rawPublicIdMode = configObject['publicModelIdMode']
+  const rawExposureMode = configObject['modelExposureMode']
   return {
     host: typeof rawHost === 'string' && rawHost.length > 0 ? rawHost : DEFAULT_CONFIG.host,
-    port: clampInt(v['port'], 1, MAX_PORT, DEFAULT_CONFIG.port),
+    port: clampInt(configObject['port'], 1, MAX_PORT, DEFAULT_CONFIG.port),
     authToken: typeof rawAuthToken === 'string' ? rawAuthToken : DEFAULT_CONFIG.authToken,
     remoteImages:
       typeof rawRemoteImages === 'boolean' ? rawRemoteImages : DEFAULT_CONFIG.remoteImages,
-    maxBodySizeMb: clampInt(v['maxBodySizeMb'], 1, MAX_BODY_SIZE_MB, DEFAULT_CONFIG.maxBodySizeMb),
+    maxBodySizeMb: clampInt(
+      configObject['maxBodySizeMb'],
+      1,
+      MAX_BODY_SIZE_MB,
+      DEFAULT_CONFIG.maxBodySizeMb
+    ),
     upstreamTimeoutSec: clampInt(
-      v['upstreamTimeoutSec'],
+      configObject['upstreamTimeoutSec'],
       MIN_UPSTREAM_TIMEOUT_SEC,
       MAX_UPSTREAM_TIMEOUT_SEC,
       DEFAULT_CONFIG.upstreamTimeoutSec
     ),
-    lifetime: v['lifetime'] === 'session' ? 'session' : 'detached',
+    lifetime: configObject['lifetime'] === 'session' ? 'session' : 'detached',
     publicModelIdMode:
       typeof rawPublicIdMode === 'string' && isPublicModelIdMode(rawPublicIdMode)
         ? rawPublicIdMode
@@ -180,9 +185,9 @@ export function normalizeConfig(raw: unknown): ProxyConfig {
       typeof rawExposureMode === 'string' && isModelExposureMode(rawExposureMode)
         ? rawExposureMode
         : DEFAULT_CONFIG.modelExposureMode,
-    customModels: normalizeStringArray(v['customModels']),
-    providerPrefixes: normalizeStringRecord(v['providerPrefixes']),
-    zed: parseZedSyncConfig(v['zed'])
+    customModels: normalizeStringArray(configObject['customModels']),
+    providerPrefixes: normalizeStringRecord(configObject['providerPrefixes']),
+    zed: parseZedSyncConfig(configObject['zed'])
   }
 }
 
@@ -208,25 +213,25 @@ export function getConfigPath(): string {
 // ---------------------------------------------------------------------------
 
 export function loadConfigFromFile(): ProxyConfig {
-  const p = getConfigPath()
-  if (!existsSync(p)) return { ...DEFAULT_CONFIG }
+  const configPath = getConfigPath()
+  if (!existsSync(configPath)) return { ...DEFAULT_CONFIG }
   try {
-    return normalizeConfig(JSON.parse(readFileSync(p, 'utf-8')))
+    return normalizeConfig(JSON.parse(readFileSync(configPath, 'utf-8')))
   } catch {
     return { ...DEFAULT_CONFIG }
   }
 }
 
 export function saveConfigToFile(config: ProxyConfig): void {
-  const p = getConfigPath()
+  const configPath = getConfigPath()
   const normalized = normalizeConfig(config)
-  const tmp = `${p}.tmp`
+  const tempPath = `${configPath}.tmp`
   try {
-    mkdirSync(dirname(p), { recursive: true })
-    writeFileSync(tmp, `${JSON.stringify(normalized, null, '\t')}\n`, 'utf-8')
-    renameSync(tmp, p)
+    mkdirSync(dirname(configPath), { recursive: true })
+    writeFileSync(tempPath, `${JSON.stringify(normalized, null, '\t')}\n`, 'utf-8')
+    renameSync(tempPath, configPath)
   } catch {
-    if (existsSync(tmp)) unlinkSync(tmp)
+    if (existsSync(tempPath)) unlinkSync(tempPath)
   }
 }
 

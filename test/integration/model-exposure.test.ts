@@ -30,10 +30,10 @@ describe('publicModelIdMode through HTTP', () => {
     if (models.length === 0) return
 
     const app = appWith({ publicModelIdMode: 'always-prefixed' })
-    const res = await app.request('/v1/models')
-    expect(res.status).toBe(200)
+    const response = await app.request('/v1/models')
+    expect(response.status).toBe(200)
 
-    const body = await jsonBody(res)
+    const body = await jsonBody(response)
     expect(isModelListBody(body)).toBe(true)
     if (!isModelListBody(body)) return
 
@@ -49,20 +49,20 @@ describe('publicModelIdMode through HTTP', () => {
     if (models.length === 0) return
 
     const app = appWith({ publicModelIdMode: 'collision-prefixed' })
-    const res = await app.request('/v1/models')
-    expect(res.status).toBe(200)
+    const response = await app.request('/v1/models')
+    expect(response.status).toBe(200)
 
-    const body = await jsonBody(res)
+    const body = await jsonBody(response)
     expect(isModelListBody(body)).toBe(true)
     if (!isModelListBody(body)) return
 
     if (body.data.length === 0) return
 
     const idCounts = new Map<string, number>()
-    for (const m of models) {
-      idCounts.set(m.id, (idCounts.get(m.id) ?? 0) + 1)
+    for (const model of models) {
+      idCounts.set(model.id, (idCounts.get(model.id) ?? 0) + 1)
     }
-    const hasCollisions = [...idCounts.values()].some((c) => c > 1)
+    const hasCollisions = [...idCounts.values()].some((occurrences) => occurrences > 1)
 
     const unprefixedModels = hasCollisions ? [] : body.data
     for (const model of unprefixedModels) {
@@ -88,10 +88,10 @@ describe('modelExposureMode through HTTP', () => {
       modelExposureMode: 'custom',
       customModels: [canonicalId]
     })
-    const res = await app.request('/v1/models')
-    expect(res.status).toBe(200)
+    const response = await app.request('/v1/models')
+    expect(response.status).toBe(200)
 
-    const body = await jsonBody(res)
+    const body = await jsonBody(response)
     expect(isModelListBody(body)).toBe(true)
     if (!isModelListBody(body)) return
 
@@ -106,10 +106,10 @@ describe('modelExposureMode through HTTP', () => {
       modelExposureMode: 'custom',
       customModels: []
     })
-    const res = await app.request('/v1/models')
-    expect(res.status).toBe(200)
+    const response = await app.request('/v1/models')
+    expect(response.status).toBe(200)
 
-    const body = await jsonBody(res)
+    const body = await jsonBody(response)
     expect(isModelListBody(body)).toBe(true)
     if (!isModelListBody(body)) return
 
@@ -153,14 +153,14 @@ describe('providerPrefixes through HTTP', () => {
       publicModelIdMode: 'always-prefixed',
       providerPrefixes: { [first.provider]: 'custom' }
     })
-    const res = await app.request('/v1/models')
-    expect(res.status).toBe(200)
+    const response = await app.request('/v1/models')
+    expect(response.status).toBe(200)
 
-    const body = await jsonBody(res)
+    const body = await jsonBody(response)
     expect(isModelListBody(body)).toBe(true)
     if (!isModelListBody(body)) return
 
-    const prefixedModel = body.data.find((m) => m.id.startsWith('custom/'))
+    const prefixedModel = body.data.find((model) => model.id.startsWith('custom/'))
     expect(prefixedModel).toBeDefined()
   })
 })
@@ -183,7 +183,7 @@ describe('model resolution with exposure configs', () => {
       customModels: [`${first.provider}/${first.id}`]
     })
 
-    const res = await app.request('/v1/chat/completions', {
+    const response = await app.request('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -191,9 +191,9 @@ describe('model resolution with exposure configs', () => {
         messages: [{ role: 'user', content: 'Hello' }]
       })
     })
-    expect(res.status).toBe(404)
+    expect(response.status).toBe(404)
 
-    const body = await jsonBody(res)
+    const body = await jsonBody(response)
     expect(isErrorBody(body)).toBe(true)
     if (!isErrorBody(body)) return
 
@@ -221,10 +221,10 @@ describe('model resolution with exposure configs', () => {
     const publicId = firstModel.id
     const encodedId = encodeURIComponent(publicId)
 
-    const res = await app.request(`/v1/models/${encodedId}`)
-    expect(res.status).toBe(200)
+    const response = await app.request(`/v1/models/${encodedId}`)
+    expect(response.status).toBe(200)
 
-    const body = await jsonBody(res)
+    const body = await jsonBody(response)
     expect(isRecord(body)).toBe(true)
     if (!isRecord(body)) return
 

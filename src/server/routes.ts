@@ -93,26 +93,26 @@ async function getExposure(configReader: ExposureConfigReader): Promise<ModelExp
  * Map upstream error, log it, and emit a structured warn for rate limit / overload.
  */
 function handleUpstreamError(
-  ctx: LogContext,
+  logContext: LogContext,
   err: unknown
 ): { status: UpstreamErrorStatus; body: OpenAIError } {
   const mapped = mapUpstreamError(err)
-  logError(ctx, mapped.body.error.message, err instanceof Error ? err.message : undefined)
+  logError(logContext, mapped.body.error.message, err instanceof Error ? err.message : undefined)
   if (mapped.status === HTTP_TOO_MANY_REQUESTS || mapped.status === HTTP_SERVICE_UNAVAILABLE) {
-    logUpstreamOverload(ctx, mapped.status, mapped.body.error.code ?? 'unknown')
+    logUpstreamOverload(logContext, mapped.status, mapped.body.error.code ?? 'unknown')
   }
   return mapped
 }
 
 /** Parse the JSON body and validate it as a chat completion request. */
-async function parseChatRequest(c: ProxyContext): Promise<Step<ChatRequest>> {
+async function parseChatRequest(context: ProxyContext): Promise<Step<ChatRequest>> {
   let body: unknown
   try {
-    body = await c.req.json()
+    body = await context.req.json()
   } catch {
     return {
       ok: false,
-      response: c.json(invalidRequest('Invalid JSON in request body'), HTTP_BAD_REQUEST)
+      response: context.json(invalidRequest('Invalid JSON in request body'), HTTP_BAD_REQUEST)
     }
   }
 
@@ -123,7 +123,7 @@ async function parseChatRequest(c: ProxyContext): Promise<Step<ChatRequest>> {
   if (validation.status === HTTP_UNPROCESSABLE_ENTITY) {
     return {
       ok: false,
-      response: c.json(
+      response: context.json(
         unsupportedParameter(validation.param ?? 'unknown', validation.message),
         HTTP_UNPROCESSABLE_ENTITY
       )
@@ -131,7 +131,7 @@ async function parseChatRequest(c: ProxyContext): Promise<Step<ChatRequest>> {
   }
   return {
     ok: false,
-    response: c.json(
+    response: context.json(
       invalidRequest(validation.message, validation.param ?? undefined),
       HTTP_BAD_REQUEST
     )
@@ -139,12 +139,19 @@ async function parseChatRequest(c: ProxyContext): Promise<Step<ChatRequest>> {
 }
 
 /** Convert the OpenAI messages and tools into a pi Context. */
-function buildPiContext(c: ProxyContext, model: PiModel, request: ChatRequest): Step<PiContext> {
+function buildPiContext(
+  honoContext: ProxyContext,
+  model: PiModel,
+  request: ChatRequest
+): Step<PiContext> {
   const conversion = convertMessages(request.messages)
   if (!conversion.ok) {
     return {
       ok: false,
-      response: c.json(invalidRequest(conversion.message, conversion.param), HTTP_BAD_REQUEST)
+      response: honoContext.json(
+        invalidRequest(conversion.message, conversion.param),
+        HTTP_BAD_REQUEST
+      )
     }
   }
 
@@ -167,7 +174,7 @@ function buildPiContext(c: ProxyContext, model: PiModel, request: ChatRequest): 
     if (!toolConversion.ok) {
       return {
         ok: false,
-        response: c.json(
+        response: honoContext.json(
           unsupportedParameter(toolConversion.param, toolConversion.message),
           HTTP_UNPROCESSABLE_ENTITY
         )
@@ -185,14 +192,14 @@ function buildPiContext(c: ProxyContext, model: PiModel, request: ChatRequest): 
  * letting the provider fail later with a less actionable error.
  */
 async function checkRequestAuth(
-  c: ProxyContext,
+  context: ProxyContext,
   model: PiModel,
   upstreamApiKey: string | undefined
 ): Promise<Response | undefined> {
   if (upstreamApiKey !== undefined) return undefined
   const requestAuth = await getRequestAuth(model)
   if (requestAuth.ok) return undefined
-  return c.json(
+  return context.json(
     authenticationError(
       `Could not resolve request auth for provider '${model.provider}'. ${requestAuth.error}. ` +
         "Configure credentials via 'pi /login' or pass X-Pi-Upstream-Api-Key header."
@@ -211,18 +218,18 @@ interface CompletionJob {
   readonly options: CompletionOptions
 }
 
-function streamChat(c: ProxyContext, job: CompletionJob): Response {
+function streamChat(honoContext: ProxyContext, job: CompletionJob): Response {
   const { requestId, canonicalModelId, model, context, request, options } = job
   const includeUsage =
     request.stream_options !== null &&
     request.stream_options !== undefined &&
     request.stream_options.include_usage === true
 
-  c.header('content-type', 'text/event-stream')
-  c.header('cache-control', 'no-cache')
-  c.header('connection', 'keep-alive')
+  honoContext.header('content-type', 'text/event-stream')
+  honoContext.header('cache-control', 'no-cache')
+  honoContext.header('connection', 'keep-alive')
 
-  return honoStream(c, async (stream) => {
+  return honoStream(honoContext, async (stream) => {
     try {
       const eventStream = await piStream(model, context, request, options)
 
@@ -246,7 +253,7 @@ function streamChat(c: ProxyContext, job: CompletionJob): Response {
   })
 }
 
-async function completeChat(c: ProxyContext, job: CompletionJob): Promise<Response> {
+async function completeChat(honoContext: ProxyContext, job: CompletionJob): Promise<Response> {
   const { requestId, canonicalModelId, model, context, request, options } = job
   try {
     const message = await piComplete(model, context, request, options)
@@ -258,25 +265,25 @@ async function completeChat(c: ProxyContext, job: CompletionJob): Promise<Respon
         { requestId, method: 'POST', path: CHAT_PATH },
         new Error(errorMessage)
       )
-      return c.json(mapped.body, mapped.status)
+      return honoContext.json(mapped.body, mapped.status)
     }
 
-    return c.json(buildChatCompletion(requestId, canonicalModelId, message))
+    return honoContext.json(buildChatCompletion(requestId, canonicalModelId, message))
   } catch (err: unknown) {
     const mapped = handleUpstreamError({ requestId, method: 'POST', path: CHAT_PATH }, err)
-    return c.json(mapped.body, mapped.status)
+    return honoContext.json(mapped.body, mapped.status)
   }
 }
 
 async function handleChatCompletion(
-  c: ProxyContext,
+  context: ProxyContext,
   config: ServerConfig,
   configReader: ExposureConfigReader
 ): Promise<Response> {
-  const requestId = c.get('requestId')
-  const upstreamApiKey = c.get('upstreamApiKey')
+  const requestId = context.get('requestId')
+  const upstreamApiKey = context.get('upstreamApiKey')
 
-  const parsed = await parseChatRequest(c)
+  const parsed = await parseChatRequest(context)
   if (!parsed.ok) return parsed.response
   const request = parsed.value
 
@@ -284,7 +291,7 @@ async function handleChatCompletion(
   const exposure = await getExposure(configReader)
   const resolved = resolveExposedModel(exposure, request.model)
   if (resolved === undefined) {
-    return c.json(modelNotFound(request.model), HTTP_NOT_FOUND)
+    return context.json(modelNotFound(request.model), HTTP_NOT_FOUND)
   }
 
   const model = resolved.model
@@ -293,7 +300,7 @@ async function handleChatCompletion(
   logChatRequest(
     {
       requestId,
-      clientRequestId: c.get('clientRequestId'),
+      clientRequestId: context.get('clientRequestId'),
       method: 'POST',
       path: CHAT_PATH
     },
@@ -305,10 +312,10 @@ async function handleChatCompletion(
     }
   )
 
-  const built = buildPiContext(c, model, request)
+  const built = buildPiContext(context, model, request)
   if (!built.ok) return built.response
 
-  const authFailure = await checkRequestAuth(c, model, upstreamApiKey)
+  const authFailure = await checkRequestAuth(context, model, upstreamApiKey)
   if (authFailure !== undefined) return authFailure
 
   const job: CompletionJob = {
@@ -319,12 +326,12 @@ async function handleChatCompletion(
     request,
     options: {
       upstreamApiKey,
-      signal: c.get('abortController').signal,
+      signal: context.get('abortController').signal,
       upstreamTimeoutMs: config.upstreamTimeoutMs
     }
   }
 
-  return request.stream === true ? streamChat(c, job) : completeChat(c, job)
+  return request.stream === true ? streamChat(context, job) : completeChat(context, job)
 }
 
 const unsupportedEndpoints = [
@@ -350,43 +357,43 @@ export function createRoutes(
   const routes = new Hono<ProxyEnv>()
 
   // --- GET /v1/models ---
-  routes.get('/v1/models', async (c) => {
+  routes.get('/v1/models', async (context) => {
     const exposure = await getExposure(configReader)
-    return c.json(buildModelList(exposure.models))
+    return context.json(buildModelList(exposure.models))
   })
 
   // --- GET /v1/models/:model ---
   // Use a wildcard to capture slash-containing model IDs
-  routes.get('/v1/models/*', async (c) => {
-    const rawPath = c.req.path
+  routes.get('/v1/models/*', async (context) => {
+    const rawPath = context.req.path
     // Strip the "/v1/models/" prefix to get the full (possibly multi-segment) model ID
     if (!rawPath.startsWith(MODELS_PREFIX)) {
-      return c.json(modelNotFound(''), HTTP_NOT_FOUND)
+      return context.json(modelNotFound(''), HTTP_NOT_FOUND)
     }
     const modelIdEncoded = rawPath.slice(MODELS_PREFIX.length)
     if (modelIdEncoded.length === 0) {
       // This was handled by the exact /v1/models route
-      return c.json(modelNotFound(''), HTTP_NOT_FOUND)
+      return context.json(modelNotFound(''), HTTP_NOT_FOUND)
     }
     const modelId = decodeURIComponent(modelIdEncoded)
 
     const exposure = await getExposure(configReader)
     const resolved = resolveExposedModel(exposure, modelId)
     if (resolved === undefined) {
-      return c.json(modelNotFound(modelId), HTTP_NOT_FOUND)
+      return context.json(modelNotFound(modelId), HTTP_NOT_FOUND)
     }
 
-    return c.json(toOpenAIModel(resolved))
+    return context.json(toOpenAIModel(resolved))
   })
 
   // --- POST /v1/chat/completions ---
-  routes.post(CHAT_PATH, (c) => handleChatCompletion(c, config, configReader))
+  routes.post(CHAT_PATH, (context) => handleChatCompletion(context, config, configReader))
 
   // --- Unsupported endpoints: clear errors ---
   for (const path of unsupportedEndpoints) {
-    routes.all(path, (c) => {
-      return c.json(
-        invalidRequest(`Endpoint '${c.req.path}' is not supported by this proxy`, undefined),
+    routes.all(path, (context) => {
+      return context.json(
+        invalidRequest(`Endpoint '${context.req.path}' is not supported by this proxy`, undefined),
         HTTP_NOT_FOUND
       )
     })

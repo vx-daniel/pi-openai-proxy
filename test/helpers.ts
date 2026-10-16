@@ -79,8 +79,8 @@ export function isErrorLike(value: unknown): value is OpenAIErrorLike {
  * Parse JSON response body for test assertions.
  * Returns `unknown` -- callers must narrow with type guards.
  */
-export async function jsonBody(res: Response): Promise<unknown> {
-  return res.json()
+export async function jsonBody(response: Response): Promise<unknown> {
+  return response.json()
 }
 
 /**
@@ -108,13 +108,13 @@ export function testConfig(): ServerConfig {
  * settings and exposure config. Never reads from the user's config file.
  */
 export function testApp(config?: ServerConfig): ReturnType<typeof createApp> {
-  const c = config ?? testConfig()
+  const serverConfig = config ?? testConfig()
   const reader: ExposureConfigReader = () => ({
-    publicModelIdMode: c.publicModelIdMode,
-    modelExposureMode: c.modelExposureMode,
+    publicModelIdMode: serverConfig.publicModelIdMode,
+    modelExposureMode: serverConfig.modelExposureMode,
     enabledModels: undefined,
-    customModels: c.customModels,
-    providerPrefixes: c.providerPrefixes
+    customModels: serverConfig.customModels,
+    providerPrefixes: serverConfig.providerPrefixes
   })
-  return createApp(c, reader)
+  return createApp(serverConfig, reader)
 }

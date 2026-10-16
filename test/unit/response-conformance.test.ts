@@ -53,11 +53,11 @@ function makeToolCallMessage(
   calls: { id: string; name: string; args: JsonObject }[],
   overrides: Partial<AssistantMessage> = {}
 ): AssistantMessage {
-  const content: ToolCall[] = calls.map((c) => ({
+  const content: ToolCall[] = calls.map((call) => ({
     type: 'toolCall',
-    id: c.id,
-    name: c.name,
-    arguments: c.args
+    id: call.id,
+    name: call.name,
+    arguments: call.args
   }))
   return {
     role: 'assistant',
@@ -105,8 +105,8 @@ describe('non-streaming response conformance', () => {
     ]
 
     for (const [piReason, expected] of mapping) {
-      const msg = makeTextMessage('test', { stopReason: piReason })
-      const result = buildChatCompletion('req', 'm', msg)
+      const message = makeTextMessage('test', { stopReason: piReason })
+      const result = buildChatCompletion('req', 'm', message)
       expect(result.choices[0]?.finish_reason).toBe(expected)
     }
   })
@@ -124,19 +124,21 @@ describe('non-streaming response conformance', () => {
   })
 
   test('content is null when no text parts exist', () => {
-    const msg = makeToolCallMessage([{ id: 'tc-1', name: 'get_weather', args: { city: 'NYC' } }])
-    const result = buildChatCompletion('req-5', 'm', msg)
+    const message = makeToolCallMessage([
+      { id: 'tc-1', name: 'get_weather', args: { city: 'NYC' } }
+    ])
+    const result = buildChatCompletion('req-5', 'm', message)
     const content = result.choices[0]?.message.content
     // Must be explicitly null, not undefined
     expect(content).toBeNull()
   })
 
   test('tool_calls shape matches OpenAI contract', () => {
-    const msg = makeToolCallMessage([
+    const message = makeToolCallMessage([
       { id: 'call_abc', name: 'get_weather', args: { city: 'NYC' } },
       { id: 'call_def', name: 'search', args: { query: 'hello' } }
     ])
-    const result = buildChatCompletion('req-6', 'm', msg)
+    const result = buildChatCompletion('req-6', 'm', message)
     const toolCalls = result.choices[0]?.message.tool_calls
 
     expect(toolCalls).toBeDefined()
@@ -158,10 +160,10 @@ describe('non-streaming response conformance', () => {
   })
 
   test('usage fields are all numbers', () => {
-    const msg = makeTextMessage('Hi', {
+    const message = makeTextMessage('Hi', {
       usage: makeUsage({ input: 15, output: 25, totalTokens: 40 })
     })
-    const result = buildChatCompletion('req-8', 'm', msg)
+    const result = buildChatCompletion('req-8', 'm', message)
 
     expect(result.usage.prompt_tokens).toBeTypeOf('number')
     expect(result.usage.completion_tokens).toBeTypeOf('number')

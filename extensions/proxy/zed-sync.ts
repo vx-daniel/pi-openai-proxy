@@ -44,23 +44,26 @@ async function runZedSync(
 
 export async function handleZedSync(
   state: ProxyState,
-  ctx: ExtensionContext,
+  context: ExtensionContext,
   args: string
 ): Promise<void> {
   state.config = loadConfigFromFile()
   const dryRun = args.includes('--dry-run')
   const result = await runZedSync(state, dryRun)
-  ctx.ui.notify(`Zed sync: ${result.message}`, result.ok ? 'info' : 'error')
+  context.ui.notify(`Zed sync: ${result.message}`, result.ok ? 'info' : 'error')
 }
 
 /**
  * Trigger auto-sync to Zed if enabled. Called after config save.
  */
-export async function maybeAutoSyncZed(state: ProxyState, ctx: ExtensionContext): Promise<void> {
+export async function maybeAutoSyncZed(
+  state: ProxyState,
+  context: ExtensionContext
+): Promise<void> {
   if (!state.config.zed.autoSync) return
   const result = await runZedSync(state, false)
   if (result.ok) {
-    ctx.ui.notify(`Zed auto-sync: ${result.message}`, 'info')
+    context.ui.notify(`Zed auto-sync: ${result.message}`, 'info')
   }
   // Silent on failure during auto-sync -- don't spam the user
 }

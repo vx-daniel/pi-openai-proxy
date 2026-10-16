@@ -38,9 +38,9 @@ export interface ServerConfig {
 
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
   if (raw === undefined) return fallback
-  const n = Number.parseInt(raw, 10)
-  if (!Number.isFinite(n) || n <= 0) return fallback
-  return n
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback
+  return parsed
 }
 
 export interface CliOverrides {

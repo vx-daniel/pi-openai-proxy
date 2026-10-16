@@ -59,7 +59,7 @@ function makeErrorMessage(errorMessage: string): AssistantMessage {
 async function* yieldEvents(
   events: AssistantMessageEvent[]
 ): AsyncGenerator<AssistantMessageEvent> {
-  for (const e of events) yield e
+  for (const event of events) yield event
 }
 
 describe('streamToSSE', () => {

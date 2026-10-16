@@ -52,24 +52,24 @@ export function convertMessages(messages: OpenAIMessage[]): ConversionResult {
 
   const toolCallNames = collectToolCallNames(messages)
 
-  for (let i = 0; i < messages.length; i++) {
-    const msg = messages[i]
-    if (msg === undefined) continue
+  for (let messageIndex = 0; messageIndex < messages.length; messageIndex++) {
+    const message = messages[messageIndex]
+    if (message === undefined) continue
 
-    if (msg.role === 'system') {
-      systemParts.push(msg.content)
-    } else if (msg.role === 'developer') {
-      systemParts.push(msg.content)
-    } else if (msg.role === 'user') {
-      const userMsg = convertUserMessage(msg.content, i)
+    if (message.role === 'system') {
+      systemParts.push(message.content)
+    } else if (message.role === 'developer') {
+      systemParts.push(message.content)
+    } else if (message.role === 'user') {
+      const userMsg = convertUserMessage(message.content, messageIndex)
       if (!userMsg.ok) return userMsg
       piMessages.push(userMsg.message)
-    } else if (msg.role === 'assistant') {
-      const assistantMsg = convertAssistantMessage(msg.content ?? null, msg.tool_calls)
+    } else if (message.role === 'assistant') {
+      const assistantMsg = convertAssistantMessage(message.content ?? null, message.tool_calls)
       piMessages.push(assistantMsg)
     } else {
-      const toolName = toolCallNames.get(msg.tool_call_id) ?? ''
-      const toolMsg = convertToolMessage(msg.content, msg.tool_call_id, toolName)
+      const toolName = toolCallNames.get(message.tool_call_id) ?? ''
+      const toolMsg = convertToolMessage(message.content, message.tool_call_id, toolName)
       piMessages.push(toolMsg)
     }
   }
@@ -92,9 +92,9 @@ export function convertMessages(messages: OpenAIMessage[]): ConversionResult {
  */
 function collectToolCallNames(messages: OpenAIMessage[]): Map<string, string> {
   const toolCallNames = new Map<string, string>()
-  for (const msg of messages) {
-    if (msg.role === 'assistant' && 'tool_calls' in msg) {
-      for (const tc of msg.tool_calls ?? []) {
+  for (const message of messages) {
+    if (message.role === 'assistant' && 'tool_calls' in message) {
+      for (const tc of message.tool_calls ?? []) {
         toolCallNames.set(tc.id, tc.function.name)
       }
     }
@@ -123,8 +123,8 @@ function convertUserMessage(content: UserContent, index: number): UserConversion
   // Multi-part content
   const parts: (TextContent | ImageContent)[] = []
 
-  for (let j = 0; j < content.length; j++) {
-    const part = content[j]
+  for (let partIndex = 0; partIndex < content.length; partIndex++) {
+    const part = content[partIndex]
     if (part === undefined) continue
 
     if (part.type === 'text') {
@@ -137,8 +137,8 @@ function convertUserMessage(content: UserContent, index: number): UserConversion
         if (!result.ok) {
           return {
             ok: false,
-            message: `${result.message} at messages[${String(index)}].content[${String(j)}]`,
-            param: `messages[${String(index)}].content[${String(j)}].image_url.url`
+            message: `${result.message} at messages[${String(index)}].content[${String(partIndex)}]`,
+            param: `messages[${String(index)}].content[${String(partIndex)}].image_url.url`
           }
         }
         parts.push({
@@ -151,14 +151,14 @@ function convertUserMessage(content: UserContent, index: number): UserConversion
         return {
           ok: false,
           message: 'Remote image URLs are not supported. Use base64 data URIs instead.',
-          param: `messages[${String(index)}].content[${String(j)}].image_url.url`
+          param: `messages[${String(index)}].content[${String(partIndex)}].image_url.url`
         }
       }
     } else {
       return {
         ok: false,
         message: `Unsupported content part type: '${part.type}'`,
-        param: `messages[${String(index)}].content[${String(j)}].type`
+        param: `messages[${String(index)}].content[${String(partIndex)}].type`
       }
     }
   }
