@@ -4,32 +4,24 @@
  * models.json that is often a key.
  */
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-
 import { resetSync } from '@logtape/logtape'
 import { configureLogging } from '@proxy/logging'
-import { initRegistry } from '@proxy/pi/registry'
 import { afterEach, describe, expect, test, vi } from 'vite-plus/test'
 
+import { type FixtureAgentDir, loadFixtureAgentDir } from '../fixtures/agent-dir'
 import { testApp } from '../helpers'
 
 const KEY = 'notarealsecret-models-json-key'
 
-let agentDir = ''
+let agentDir: FixtureAgentDir | undefined
 let lines: string[] = []
 
 /** Load `contents` as models.json with every log line captured, and return the health body. */
 async function healthWith(contents: string): Promise<{ status: number; text: string }> {
-  vi.stubEnv('ANTHROPIC_API_KEY', undefined)
-  vi.stubEnv('OPENAI_API_KEY', undefined)
-  agentDir = mkdtempSync(join(tmpdir(), 'pi-proxy-models-json-'))
-  writeFileSync(join(agentDir, 'models.json'), contents)
-  vi.stubEnv('PI_CODING_AGENT_DIR', agentDir)
   lines = []
+  // Before loading: the startup warning is one of the lines under test.
   configureLogging({ level: 'trace', format: 'json', write: (line) => lines.push(line) })
-  await initRegistry()
+  agentDir = await loadFixtureAgentDir({ modelsJsonText: contents })
   const response = await testApp().request('/healthz/models')
   return { status: response.status, text: await response.text() }
 }
@@ -37,7 +29,7 @@ async function healthWith(contents: string): Promise<{ status: number; text: str
 afterEach(() => {
   resetSync()
   vi.unstubAllEnvs()
-  rmSync(agentDir, { recursive: true, force: true })
+  agentDir?.remove()
 })
 
 describe('a models.json that fails to load', () => {

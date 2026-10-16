@@ -397,7 +397,23 @@ export default defineConfig({
   },
 
   test: {
-    include: ['test/**/*.test.ts']
+    // `offline` (unit + integration) runs everywhere and never sees a real pi login or provider
+    // credentials: test/setup/offline.ts points pi at an empty agent dir. `live`
+    // (test/conformance) calls real providers with the developer's login and spends quota, so it
+    // exists only on demand: `pnpm run test:live` sets PI_PROXY_LIVE_TESTS=1.
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'offline',
+          include: ['test/unit/**/*.test.ts', 'test/integration/**/*.test.ts'],
+          setupFiles: ['test/setup/offline.ts']
+        }
+      },
+      ...(process.env.PI_PROXY_LIVE_TESTS === '1'
+        ? [{ extends: true, test: { name: 'live', include: ['test/conformance/**/*.test.ts'] } }]
+        : [])
+    ]
   },
 
   pack: {

@@ -6,17 +6,18 @@
  * HTTP stack, which fake timers cannot drive. The intervals are kept to tenths of a second.
  */
 
-import { once } from 'node:events'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { createServer, type Server, type ServerResponse } from 'node:http'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { setTimeout as sleep } from 'node:timers/promises'
-
-import { initRegistry } from '@proxy/pi/registry'
-import { isRecord } from '@proxy/utils/guards'
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vite-plus/test'
 
+import { type FixtureAgentDir, loadFixtureAgentDir } from '../fixtures/agent-dir'
+import {
+  finishChunk,
+  type MockProvider,
+  silent,
+  sse,
+  stall,
+  startMockProvider,
+  textChunks
+} from '../fixtures/mock-provider'
 import { testApp, testConfig } from '../helpers'
 
 /** Shorter than the whole steady answer, ten times the gap between its chunks. */
@@ -25,78 +26,30 @@ const CHUNK_INTERVAL_MS = 100
 /** 15 chunks 100 ms apart: about 1.5 s in total, past the 1 s timeout. */
 const STEADY_CHUNKS = 15
 
-let server: Server
-let agentDir = ''
-
-function chunk(content: string, finishReason: string | null): string {
-  return `data: ${JSON.stringify({
-    id: 'mock',
-    object: 'chat.completion.chunk',
-    created: 0,
-    model: 'mock',
-    choices: [{ index: 0, delta: { content }, finish_reason: finishReason }]
-  })}\n\n`
-}
-
-/**
- * `steady` streams a chunk every 100 ms, then stops; `stall` sends one chunk and goes quiet;
- * `silent` never answers at all, not even with headers.
- */
-async function answer(model: string, response: ServerResponse): Promise<void> {
-  if (model === 'silent') return
-  response.writeHead(200, { 'content-type': 'text/event-stream' })
-  if (model === 'stall') {
-    response.write(chunk('x', null))
-    return
-  }
-  for (let chunkIndex = 0; chunkIndex < STEADY_CHUNKS; chunkIndex++) {
-    response.write(chunk('x', null))
-    await sleep(CHUNK_INTERVAL_MS)
-  }
-  response.end(`${chunk('', 'stop')}data: [DONE]\n\n`)
-}
+let mock: MockProvider
+let agentDir: FixtureAgentDir
 
 beforeAll(async () => {
-  server = createServer((request, response) => {
-    let body = ''
-    request.on('data', (part: Buffer) => {
-      body += part.toString()
-    })
-    request.on('end', () => {
-      const parsed: unknown = JSON.parse(body)
-      const model = isRecord(parsed) && typeof parsed['model'] === 'string' ? parsed['model'] : ''
-      void answer(model, response)
-    })
+  mock = await startMockProvider({
+    // A chunk every 100 ms, then the finish: the whole answer outlasts the timeout.
+    steady: sse(
+      [...textChunks(...Array.from({ length: STEADY_CHUNKS }, () => 'x')), finishChunk('stop')],
+      { intervalMs: CHUNK_INTERVAL_MS }
+    ),
+    // One chunk, then nothing.
+    stall: stall(textChunks('x')),
+    // Not even headers.
+    silent: silent()
   })
-  server.listen(0, '127.0.0.1')
-  await once(server, 'listening')
-  const address = server.address()
-  if (address === null || typeof address === 'string') throw new Error('mock provider not on TCP')
-  const { port } = address
-
-  agentDir = mkdtempSync(join(tmpdir(), 'pi-proxy-upstream-timeout-'))
-  writeFileSync(
-    join(agentDir, 'models.json'),
-    JSON.stringify({
-      providers: {
-        'timeout-mock': {
-          baseUrl: `http://127.0.0.1:${String(port)}/v1`,
-          api: 'openai-completions',
-          apiKey: 'notarealsecret-timeout-key',
-          models: [{ id: 'steady' }, { id: 'stall' }, { id: 'silent' }]
-        }
-      }
-    })
-  )
-  vi.stubEnv('PI_CODING_AGENT_DIR', agentDir)
-  await initRegistry()
+  agentDir = await loadFixtureAgentDir({
+    modelsJson: { providers: { 'timeout-mock': mock.provider() } }
+  })
 })
 
-afterAll(() => {
+afterAll(async () => {
   vi.unstubAllEnvs()
-  server.closeAllConnections()
-  server.close()
-  rmSync(agentDir, { recursive: true, force: true })
+  await mock.close()
+  agentDir.remove()
 })
 
 const app = () => testApp({ ...testConfig(), upstreamTimeoutMs: IDLE_TIMEOUT_MS })

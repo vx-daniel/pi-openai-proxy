@@ -3,31 +3,21 @@
  * provider with a literal API key, so the credential is known and nothing leaves the machine.
  */
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-
-import { initRegistry } from '@proxy/pi/registry'
 import { createApp } from '@proxy/server/app'
 import { isRecord } from '@proxy/utils/guards'
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vite-plus/test'
 
+import { type FixtureAgentDir, loadFixtureAgentDir } from '../fixtures/agent-dir'
 import { jsonBody, testApp, testConfig } from '../helpers'
 
 const PROVIDER_KEY = 'notarealsecret-health-provider-key'
 const PROXY_TOKEN = 'notarealsecret-health-proxy-token'
 
-const agentDirs: string[] = []
+const agentDirs: FixtureAgentDir[] = []
 
 /** Point pi at a fresh agent directory holding only `models.json` (when given), and load it. */
 async function loadAgentDir(modelsJson?: Record<string, unknown>): Promise<void> {
-  const agentDir = mkdtempSync(join(tmpdir(), 'pi-proxy-health-'))
-  agentDirs.push(agentDir)
-  if (modelsJson !== undefined) {
-    writeFileSync(join(agentDir, 'models.json'), JSON.stringify(modelsJson))
-  }
-  vi.stubEnv('PI_CODING_AGENT_DIR', agentDir)
-  await initRegistry()
+  agentDirs.push(await loadFixtureAgentDir(modelsJson === undefined ? {} : { modelsJson }))
 }
 
 const MOCK_PROVIDER = {
@@ -42,15 +32,12 @@ const MOCK_PROVIDER = {
 }
 
 beforeAll(async () => {
-  // Credentials from the environment would show up as configured providers.
-  vi.stubEnv('ANTHROPIC_API_KEY', undefined)
-  vi.stubEnv('OPENAI_API_KEY', undefined)
   await loadAgentDir(MOCK_PROVIDER)
 })
 
 afterAll(() => {
   vi.unstubAllEnvs()
-  for (const agentDir of agentDirs) rmSync(agentDir, { recursive: true, force: true })
+  for (const agentDir of agentDirs) agentDir.remove()
 })
 
 const authed = { headers: { Authorization: `Bearer ${PROXY_TOKEN}` } }

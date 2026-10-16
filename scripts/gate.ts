@@ -19,9 +19,9 @@
  *                with `typeCheck` on, so this gate is also the TypeScript type check — plus the
  *                zod, import-alias, repo (`lint/repo-rules.ts`) and naming (`lint/naming.ts`)
  *                plugins. Warnings fail it (`maxWarnings: 0`).
- *   3. test   — `vp test test/unit test/integration`: Vitest over the unit and integration
- *                suites. The conformance suite is left out: it calls real providers and needs
- *                credentials a hook or CI runner does not hold.
+ *   3. test   — `vp test --project offline`: Vitest over the unit and integration suites, with
+ *                no real pi login or provider credentials (test/setup/offline.ts). The live
+ *                conformance suite exists only under `test:live`.
  *   4. build  — `vp pack`: the tsdown build of every published entry point and its declarations.
  *                Last, because it is the slowest and the checks above cover the source it reads.
  *
