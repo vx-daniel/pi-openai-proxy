@@ -63,10 +63,9 @@ describe("publicModelIdMode through HTTP", () => {
 		}
 		const hasCollisions = [...idCounts.values()].some((c) => c > 1);
 
-		if (!hasCollisions) {
-			for (const model of body.data) {
-				expect(model.id).toBeTypeOf("string");
-			}
+		const unprefixedModels = hasCollisions ? [] : body.data;
+		for (const model of unprefixedModels) {
+			expect(model.id).toBeTypeOf("string");
 		}
 	});
 });

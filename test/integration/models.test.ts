@@ -28,9 +28,7 @@ describe("GET /v1/models", () => {
 		expect(body.object).toBe("list");
 		expect(body.data).toBeInstanceOf(Array);
 
-		if (body.data.length > 0) {
-			const first = body.data[0];
-			if (first === undefined) return;
+		for (const first of body.data.slice(0, 1)) {
 			expect(first.object).toBe("model");
 			expect(first.owned_by).toBeDefined();
 			expect(first.created).toBeTypeOf("number");

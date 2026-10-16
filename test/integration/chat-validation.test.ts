@@ -308,14 +308,12 @@ describe("POST /v1/chat/completions - upstream API key override", () => {
 describe("unsupported endpoints", () => {
 	const endpoints = ["/v1/completions", "/v1/embeddings", "/v1/assistants"];
 
-	for (const endpoint of endpoints) {
-		test(`returns 404 for ${endpoint}`, async () => {
-			const res = await app.request(endpoint, { method: "POST" });
-			expect(res.status).toBe(404);
-			const body = await jsonBody(res);
-			expect(isErrorLike(body)).toBe(true);
-			if (!isErrorLike(body)) return;
-			expect(body.error.message).toContain("not supported");
-		});
-	}
+	test.each(endpoints)("returns 404 for %s", async (endpoint) => {
+		const res = await app.request(endpoint, { method: "POST" });
+		expect(res.status).toBe(404);
+		const body = await jsonBody(res);
+		expect(isErrorLike(body)).toBe(true);
+		if (!isErrorLike(body)) return;
+		expect(body.error.message).toContain("not supported");
+	});
 });

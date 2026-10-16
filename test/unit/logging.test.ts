@@ -74,7 +74,7 @@ describe("logChatRequest", () => {
 		);
 
 		const [entry] = loggedLines();
-		expect(Object.keys(entry ?? {}).sort()).toEqual([
+		expect(Object.keys(entry ?? {}).toSorted()).toEqual([
 			"clientRequestId",
 			"event",
 			"level",

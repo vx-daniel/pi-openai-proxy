@@ -3,7 +3,7 @@
  */
 
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { beforeAll, describe, expect, test } from "vite-plus/test";
+import { assert, beforeAll, describe, expect, test } from "vite-plus/test";
 import { getRequestAuth, initRegistry } from "@proxy/pi/registry";
 
 beforeAll(async () => {
@@ -30,8 +30,7 @@ describe("getRequestAuth", () => {
 	test("refuses a model whose provider has no credentials, and says why", async () => {
 		const result = await getRequestAuth(MODEL_WITHOUT_CREDENTIALS);
 		expect(result.ok).toBe(false);
-		if (!result.ok) {
-			expect(result.error).toContain("provider-with-no-credentials");
-		}
+		assert(!result.ok);
+		expect(result.error).toContain("provider-with-no-credentials");
 	});
 });
