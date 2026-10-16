@@ -41,8 +41,13 @@ export default defineConfig({
       { name: 'zod', specifier: 'eslint-plugin-zod' },
       { name: '@limegrass/import-alias', specifier: '@limegrass/eslint-plugin-import-alias' },
       { name: 'vite-plus', specifier: 'vite-plus/oxlint-plugin' },
-      './lint/repo-rules.ts'
+      './lint/repo-rules.ts',
+      './lint/naming.ts'
     ],
+    settings: {
+      // Names every naming/* rule accepts. `z`: zod's documented `import * as z` convention.
+      naming: { allow: ['z'] }
+    },
     rules: {
       // Viaanix base + type-aware
       'unicorn/consistent-function-scoping': 'off',
@@ -228,6 +233,10 @@ export default defineConfig({
       'repo/no-enum': 'error',
       'repo/no-delete': 'error',
       'repo/no-implicit-any-let': 'error',
+      'naming/no-abbreviations': 'error',
+      'naming/no-single-char-bindings': 'warn',
+      'naming/no-single-char-keys': 'error',
+      'naming/no-generic-iteration-names': 'warn',
       'import/namespace': 'error',
 
       // Zod
