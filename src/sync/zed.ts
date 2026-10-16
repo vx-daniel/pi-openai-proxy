@@ -11,6 +11,7 @@ import { resolve } from 'node:path'
 
 import { proxyLogger } from '@proxy/logging'
 import type { ExposedModel } from '@proxy/openai/model-exposure'
+import { errorCode } from '@proxy/utils/guards'
 import {
   applyEdits,
   type ModificationOptions,
@@ -237,9 +238,9 @@ function readSettingsText(configPath: string): string {
   try {
     return readFileSync(configPath, 'utf-8')
   } catch (error) {
-    zedLogger.error('Failed to read Zed settings {configPath}: {error}', {
+    zedLogger.error('Failed to read Zed settings {configPath} ({code})', {
       configPath,
-      error: error instanceof Error ? error.message : String(error)
+      code: errorCode(error)
     })
     throw error
   }
@@ -250,9 +251,9 @@ function writeSettingsText(configPath: string, text: string): void {
   try {
     writeFileSync(configPath, text, 'utf-8')
   } catch (error) {
-    zedLogger.error('Failed to write Zed settings {configPath}: {error}', {
+    zedLogger.error('Failed to write Zed settings {configPath} ({code})', {
       configPath,
-      error: error instanceof Error ? error.message : String(error)
+      code: errorCode(error)
     })
     throw error
   }

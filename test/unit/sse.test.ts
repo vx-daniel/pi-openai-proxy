@@ -1,6 +1,8 @@
 import type { AssistantMessage, AssistantMessageEvent } from '@earendil-works/pi-ai'
+import { resetSync } from '@logtape/logtape'
+import { configureLogging } from '@proxy/logging'
 import { encodeDone, encodeSSE, streamToSSE } from '@proxy/openai/sse'
-import { describe, expect, test } from 'vite-plus/test'
+import { afterEach, describe, expect, test } from 'vite-plus/test'
 
 describe('encodeSSE', () => {
   test('encodes a chunk as SSE data frame', () => {
@@ -105,5 +107,37 @@ describe('streamToSSE', () => {
     expect(frames).toHaveLength(3)
     const finishFrame = JSON.parse(frames[1]?.slice(6) ?? '')
     expect(finishFrame.choices[0].finish_reason).toBe('stop')
+  })
+})
+
+describe('upstream error logging', () => {
+  afterEach(() => {
+    resetSync()
+  })
+
+  // Some providers quote the request back in their error text. Catches that text reaching a level a
+  // default deployment writes, while keeping it available to someone debugging.
+  async function logLinesFor(level: 'info' | 'debug'): Promise<string[]> {
+    const lines: string[] = []
+    configureLogging({ level, format: 'json', write: (line) => lines.push(line) })
+    const echoed = makeErrorMessage('Invalid request: "echoed user prompt" is too long')
+    const events: AssistantMessageEvent[] = [{ type: 'error', reason: 'error', error: echoed }]
+    for await (const frame of streamToSSE(yieldEvents(events), 'req-1', 'p/m', false)) {
+      expect(frame.length).toBeGreaterThan(0)
+    }
+    return lines
+  }
+
+  test('logs the error without the provider text at info', async () => {
+    const lines = await logLinesFor('info')
+    expect(lines.some((line) => line.includes('"ERROR"'))).toBe(true)
+    expect(lines.join('')).not.toContain('echoed user prompt')
+  })
+
+  test('keeps the provider text for debugging at debug', async () => {
+    const lines = await logLinesFor('debug')
+    const detailLines = lines.filter((line) => line.includes('echoed user prompt'))
+    expect(detailLines).toHaveLength(1)
+    expect(detailLines[0]).toContain('"DEBUG"')
   })
 })

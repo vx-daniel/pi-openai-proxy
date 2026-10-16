@@ -635,15 +635,25 @@ function logUpstreamStart(
   }))
 }
 
+/**
+ * The provider's raw error text, at debug only: some providers quote parts of the request back, and
+ * request content is never logged at a level a default deployment writes.
+ */
+function logUpstreamErrorDetail(detail: string | undefined): void {
+  if (detail !== undefined) {
+    completeLogger.debug('Upstream error detail: {detail}', { detail })
+  }
+}
+
 /** Log how an upstream call ended: stop reason, duration and usage, or why it failed. */
 function logUpstreamResult(call: UpstreamCall, message: AssistantMessage): void {
   if (message.stopReason === 'error') {
-    completeLogger.warn('Upstream call to {modelId} failed after {durationMs} ms: {error}', () => ({
+    completeLogger.warn('Upstream call to {modelId} failed after {durationMs} ms', () => ({
       ...callProperties(call),
       stopReason: message.stopReason,
-      rawStopReason: message.rawStopReason,
-      error: message.errorMessage
+      rawStopReason: message.rawStopReason
     }))
+    logUpstreamErrorDetail(message.errorMessage)
     return
   }
   if (message.stopReason === 'aborted') {
@@ -652,10 +662,10 @@ function logUpstreamResult(call: UpstreamCall, message: AssistantMessage): void 
       () => ({
         ...callProperties(call),
         stopReason: message.stopReason,
-        abortCause: abortCause(call.options.signal, call.opts.signal),
-        error: message.errorMessage
+        abortCause: abortCause(call.options.signal, call.opts.signal)
       })
     )
+    logUpstreamErrorDetail(message.errorMessage)
     return
   }
   completeLogger.debug(
@@ -679,12 +689,13 @@ function logUpstreamResult(call: UpstreamCall, message: AssistantMessage): void 
 /** Log an upstream call that threw instead of reporting an error message; the caller rethrows. */
 function logUpstreamThrow(call: UpstreamCall, error: unknown): void {
   const aborted = call.opts.signal?.aborted === true
-  completeLogger.warn('Upstream call to {modelId} threw after {durationMs} ms: {error}', () => ({
+  completeLogger.warn('Upstream call to {modelId} threw after {durationMs} ms', () => ({
     ...callProperties(call),
     aborted,
     abortCause: aborted ? abortCause(call.options.signal, call.opts.signal) : undefined,
-    error: error instanceof Error ? error.message : String(error)
+    errorName: error instanceof Error ? error.name : typeof error
   }))
+  logUpstreamErrorDetail(error instanceof Error ? error.message : String(error))
 }
 
 /**

@@ -11,7 +11,7 @@ import { dirname, resolve } from 'node:path'
 
 import { isLogLevel, type LogLevel } from '@logtape/logtape'
 import { proxyLogger } from '@proxy/logging'
-import { isRecord } from '@proxy/utils/guards'
+import { errorCode, isRecord } from '@proxy/utils/guards'
 import * as z from 'zod'
 
 const configLogger = proxyLogger('config')
@@ -226,12 +226,6 @@ export function getConfigPath(): string {
 // ---------------------------------------------------------------------------
 // JSON config file I/O
 // ---------------------------------------------------------------------------
-
-/** Node's error code (`ENOENT`, `EACCES`, ...) or the error's name; never its message. */
-function errorCode(error: unknown): string {
-  if (isRecord(error) && typeof error['code'] === 'string') return error['code']
-  return error instanceof Error ? error.name : 'unknown'
-}
 
 export function loadConfigFromFile(): ProxyConfig {
   const configPath = getConfigPath()

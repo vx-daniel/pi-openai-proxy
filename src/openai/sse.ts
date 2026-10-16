@@ -228,19 +228,22 @@ function eventToFrames(
   return []
 }
 
+/**
+ * Log an upstream error event. The provider's raw message goes to debug only, as in the route's
+ * handler: some providers quote parts of the request back, and request content is never logged at a
+ * level a default deployment writes.
+ */
 function logUpstreamStreamError(event: Extract<AssistantMessageEvent, { type: 'error' }>): void {
   // `aborted` is the upstream call cancelled, usually because the client disconnected.
   if (event.reason === 'aborted') {
-    sseLogger.warn('Upstream stream aborted: {errorMessage}', {
-      stopReason: event.reason,
-      errorMessage: event.error.errorMessage ?? 'Upstream call aborted'
-    })
-    return
+    sseLogger.warn('Upstream stream aborted', { stopReason: event.reason })
+  } else {
+    sseLogger.error('Upstream error inside stream ({stopReason})', { stopReason: event.reason })
   }
-  sseLogger.error('Upstream error inside stream ({stopReason}): {errorMessage}', {
-    stopReason: event.reason,
-    errorMessage: event.error.errorMessage ?? 'Upstream provider error'
-  })
+  const detail = event.error.errorMessage
+  if (detail !== undefined) {
+    sseLogger.debug('Upstream stream error detail: {detail}', { detail })
+  }
 }
 
 /**
