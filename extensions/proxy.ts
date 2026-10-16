@@ -96,13 +96,15 @@ export default function proxyExtension(pi: ExtensionAPI): void {
 
 	// Pi 1.x no longer lets an extension build its own registry (`AuthStorage` and
 	// `ModelRegistry.create()` are gone). Every entry point here starts from a handler that has a
-	// context, so each one passes that context's registry, which Pi keeps current, to
-	// useModelRegistry() first.
+	// context, so each one calls useModelRegistry() first. It also refreshes the registry (from
+	// models.json and stored credentials, no network), because the old code refreshed before every
+	// read and a model list taken at session start would miss a later `/login`.
 	let activeModelRegistry: ModelRegistry | undefined;
 	const settingsManager = SettingsManager.create(process.cwd());
 
-	function useModelRegistry(ctx: ExtensionContext): void {
+	async function useModelRegistry(ctx: ExtensionContext): Promise<void> {
 		activeModelRegistry = ctx.modelRegistry;
+		await activeModelRegistry.refresh({ allowNetwork: false });
 	}
 
 	function getAvailableModels(): Model<Api>[] {
@@ -181,7 +183,7 @@ export default function proxyExtension(pi: ExtensionAPI): void {
 	// --- Lifecycle ---
 
 	pi.on("session_start", async (_event, ctx) => {
-		useModelRegistry(ctx);
+		await useModelRegistry(ctx);
 		config = loadConfigFromFile();
 		await maybeAutoSyncZed(ctx);
 		await refreshStatus(ctx);
@@ -221,7 +223,7 @@ export default function proxyExtension(pi: ExtensionAPI): void {
 			return matches.length > 0 ? matches.map((value) => ({ value, label: value })) : null;
 		},
 		handler: async (args, ctx) => {
-			useModelRegistry(ctx);
+			await useModelRegistry(ctx);
 			const sub = args.trim().split(/\s+/)[0] ?? "";
 
 			switch (sub) {
