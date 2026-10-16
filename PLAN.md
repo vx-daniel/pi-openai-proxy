@@ -756,12 +756,16 @@ Use an OpenAI-style shape:
 
 Upstream failures (`mapUpstreamError`, `src/server/errors.ts`): pi reports a failure as text, with
 no structured status (`onResponse` fires only for successful responses). The provider's HTTP status
-is read from the fixed positions pi 1.3.0's messages put it in: leading (`429: {…}`,
-`429 {…}`), after a label (`OpenAI API error (429): …`), Google's `got status: 429.` or its error
-body's `error.code`. When a status is found it decides; the wording (`rate limit`,
-`too many requests`, `timed out`, `overloaded`, `service unavailable`, …) is consulted only when no
-status is reported (Bedrock, network failures, the proxy's own idle timeout), and a number elsewhere
-in the text never counts (#42). The client gets a fixed message and code, never the upstream text.
+is read from the fixed positions pi 1.3.0's messages put it in: leading, and only when followed by
+what only a status is followed by (`429: {…}`, `429 {…}`, `429 "…"`, `429 status code (no body)`;
+`429 tokens…` is not a status), after a label (`OpenAI API error (429): …`, `Mistral API error
+(429): …`), Google's `got status: 429.` or its error body's `error.code`. When a status is found it
+decides; the wording (`rate limit`, `too many requests`, `timed out`, `overloaded`,
+`service unavailable`, …, checked in that order) is consulted only when no status is reported
+(Bedrock, network failures, the proxy's own idle timeout), and a number elsewhere in the text never
+counts (#42). The client gets a fixed message and code, never the upstream text. A missing or broken
+upstream credential is refused with `401` before any response starts, streamed or not
+(`checkRequestAuth`).
 
 A stream that has already started cannot change its status (it is `200`): it ends with an error
 event carrying the same mapped `{ message, type, param, code }` as the non-streaming answer, then

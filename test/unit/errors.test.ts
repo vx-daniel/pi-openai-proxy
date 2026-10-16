@@ -136,7 +136,18 @@ describe('mapUpstreamError', () => {
       UNAVAILABLE
     ],
     ['an upstream 504', '504: {"message":"Gateway Timeout"}', TIMED_OUT],
-    ['an upstream 408', '408 Request Timeout', TIMED_OUT],
+    ['an upstream 408 with no body', '408 status code (no body)', TIMED_OUT],
+    ['an upstream 503 with a text body', '503 "upstream connect error"', UNAVAILABLE],
+    // A message that merely starts with a number is not reporting a status (PR #56 review).
+    ['a leading 429 that is a count', '429 tokens per minute exceeds your tier', PROVIDER_FAILED],
+    [
+      'a leading 401 that is a count',
+      '401 messages were sent in this conversation',
+      PROVIDER_FAILED
+    ],
+    // With no status, wording is checked in order: a rate limit is reported as one even when the
+    // same message also says something timed out.
+    ['rate limit before timeout, no status', 'Rate limit retry timed out', RATE_LIMITED],
     ['an upstream 503', '503: {"message":"Service Unavailable"}', UNAVAILABLE],
     [
       'an upstream 500 that mentions a rate limit',

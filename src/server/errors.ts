@@ -131,14 +131,15 @@ const BY_STATUS: ReadonlyMap<number, MappedUpstreamError> = new Map([
 
 /**
  * Where pi 1.3.0 puts the provider's HTTP status in an error message:
- * - leading, from `formatProviderError` and the OpenAI and Anthropic SDKs: `429: {…}`, `429 {…}`,
- *   `429 You exceeded…`;
- * - after a label, from `formatProviderError` with a prefix (Responses, Azure): `OpenAI API error
- *   (429): …`;
+ * - leading, followed by what only a status is followed by: pi's `429: {…}`, the Anthropic SDK's
+ *   `429 {…}`, the OpenAI SDK's `429 "Too Many Requests"` (a text body) and `429 status code (no
+ *   body)`. A message that merely starts with a number (`429 tokens over…`) does not match;
+ * - after a label, from `formatProviderError` with a prefix (Responses, Azure) and Mistral:
+ *   `OpenAI API error (429): …`;
  * - Google's SDK mid-stream: `got status: 429. {…}`.
  */
 const STATUS_POSITIONS: readonly RegExp[] = [
-  /^([45]\d\d)(?::|\s|$)/,
+  /^([45]\d\d)(?::\s| [{"]| status code\b)/,
   /^[^\n(]{1,80} \(([45]\d\d)\):/,
   /^got status: ([45]\d\d)\b/
 ]
