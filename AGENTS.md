@@ -96,8 +96,8 @@ Repository preference:
 
 - Make **frequent small commits** for logical slices.
 - Use **Conventional Commits**.
-- It is safe to **push automatically**, including `main`, when the task is complete and verified.
-- Normal collaboration model is **feature branches + PRs**.
+- Normal collaboration model is **feature branches + PRs into `dev`**. Pushing feature branches is safe once the task is complete and verified.
+- **Never push or merge to `main` directly.** Every push to `main` runs the release workflow (semantic-release). Releases happen only when `dev` is merged into `main`, and that merge is the user's decision.
 
 Practical guidance:
 
