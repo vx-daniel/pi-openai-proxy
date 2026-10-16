@@ -133,7 +133,7 @@ curl -fsS http://localhost:4141/healthz/creds?verify=true -H "Authorization: Bea
 | `stop` | Via passthrough |
 | `user` | Via passthrough |
 | `stream_options.include_usage` | Final usage chunk in SSE stream |
-| `tools` / `tool_choice` | JSON Schema -> TypeBox conversion (supported subset); `tool_choice` translated per-provider |
+| `tools` / `tool_choice` | Tool parameter schemas: JSON Schema subset with per-type constraints carried upstream; other keywords get `422` naming keyword and path (see [Tool schema policy](PLAN.md#tool-schema-policy)). `tool_choice` translated per-provider |
 | `tool_calls` in messages | Assistant tool call + tool result roundtrip |
 | `parallel_tool_calls` | Forwarded to OpenAI/Codex; translated to `disable_parallel_tool_use` for Anthropic |
 | `reasoning_effort` | Maps to pi's `ThinkingLevel` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`) |

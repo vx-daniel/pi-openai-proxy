@@ -9,8 +9,7 @@ describe('convertTools', () => {
 
   // Catches a converter that ignores `parameters` (an empty object schema would pass a type check),
   // drops `required` or descriptions, or encodes an enum as something other than const branches.
-  // Only keywords inside the converter's supported subset are used here: the rest are dropped,
-  // which is #37, and must not be pinned by this test.
+  // Constraint keywords are locked per type in json-schema-to-typebox.test.ts.
   test('converts a function tool into exactly the schema sent upstream', () => {
     const result = convertTools([
       {
