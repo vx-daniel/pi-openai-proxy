@@ -5,12 +5,13 @@
  * and skip utilities for when no API credentials are available.
  */
 
-import OpenAI from "openai";
-import { getAvailableModels, initRegistry } from "@proxy/pi/registry";
-import { testApp } from "../helpers";
+import { getAvailableModels, initRegistry } from '@proxy/pi/registry'
+import OpenAI from 'openai'
 
-let initialized = false;
-let app: ReturnType<typeof testApp> | undefined;
+import { testApp } from '../helpers'
+
+let initialized = false
+let app: ReturnType<typeof testApp> | undefined
 
 /**
  * Curated test model matrix.
@@ -24,65 +25,65 @@ let app: ReturnType<typeof testApp> | undefined;
  * Uses OAuth subscription accounts -- be mindful of quota.
  */
 export interface TestModel {
-	readonly id: string;
-	readonly category: "fast" | "mid" | "reasoning";
+  readonly id: string
+  readonly category: 'fast' | 'mid' | 'reasoning'
 }
 
 const TEST_MODEL_MATRIX: readonly TestModel[] = [
-	// Anthropic (direct)
-	{ id: "anthropic/claude-haiku-4-5", category: "fast" },
-	{ id: "anthropic/claude-sonnet-4-5", category: "mid" },
-	{ id: "anthropic/claude-sonnet-4-6", category: "reasoning" },
+  // Anthropic (direct)
+  { id: 'anthropic/claude-haiku-4-5', category: 'fast' },
+  { id: 'anthropic/claude-sonnet-4-5', category: 'mid' },
+  { id: 'anthropic/claude-sonnet-4-6', category: 'reasoning' },
 
-	// Google Gemini
-	{ id: "google-gemini-cli/gemini-2.0-flash", category: "fast" },
-	{ id: "google-gemini-cli/gemini-2.5-flash", category: "mid" },
-	{ id: "google-gemini-cli/gemini-2.5-pro", category: "reasoning" },
+  // Google Gemini
+  { id: 'google-gemini-cli/gemini-2.0-flash', category: 'fast' },
+  { id: 'google-gemini-cli/gemini-2.5-flash', category: 'mid' },
+  { id: 'google-gemini-cli/gemini-2.5-pro', category: 'reasoning' },
 
-	// OpenAI / Codex
-	{ id: "openai-codex/gpt-5.4-mini", category: "fast" },
-	{ id: "openai-codex/gpt-5.5", category: "mid" },
-	{ id: "openai-codex/gpt-5.5", category: "reasoning" },
-];
+  // OpenAI / Codex
+  { id: 'openai-codex/gpt-5.4-mini', category: 'fast' },
+  { id: 'openai-codex/gpt-5.5', category: 'mid' },
+  { id: 'openai-codex/gpt-5.5', category: 'reasoning' }
+]
 
-let resolvedModels: Map<string, TestModel> | undefined;
+let resolvedModels: Map<string, TestModel> | undefined
 
 // Pi 1.x initializes its model runtime asynchronously. Doing it once here, with a top-level
 // await, keeps every helper below (and the tests that call them while being collected) synchronous.
-await initRegistry();
+await initRegistry()
 
 /**
  * Create the app and resolve the available test models once.
  */
 export function setup(): { app: ReturnType<typeof testApp> } {
-	if (!initialized) {
-		app = testApp();
+  if (!initialized) {
+    app = testApp()
 
-		const available = new Set(getAvailableModels().map((m) => `${m.provider}/${m.id}`));
-		resolvedModels = new Map();
-		for (const tm of TEST_MODEL_MATRIX) {
-			if (available.has(tm.id)) {
-				resolvedModels.set(tm.id, tm);
-			}
-		}
+    const available = new Set(getAvailableModels().map((model) => `${model.provider}/${model.id}`))
+    resolvedModels = new Map()
+    for (const tm of TEST_MODEL_MATRIX) {
+      if (available.has(tm.id)) {
+        resolvedModels.set(tm.id, tm)
+      }
+    }
 
-		initialized = true;
-	}
-	if (app === undefined) {
-		throw new Error("App not initialized");
-	}
-	return { app };
+    initialized = true
+  }
+  if (app === undefined) {
+    throw new Error('App not initialized')
+  }
+  return { app }
 }
 
 /**
  * Get all available test models, optionally filtered by category.
  */
-export function getTestModels(category?: TestModel["category"]): TestModel[] {
-	setup();
-	if (resolvedModels === undefined) return [];
-	const all = [...resolvedModels.values()];
-	if (category === undefined) return all;
-	return all.filter((m) => m.category === category);
+export function getTestModels(category?: TestModel['category']): TestModel[] {
+  setup()
+  if (resolvedModels === undefined) return []
+  const all = [...resolvedModels.values()]
+  if (category === undefined) return all
+  return all.filter((model) => model.category === category)
 }
 
 /**
@@ -90,17 +91,17 @@ export function getTestModels(category?: TestModel["category"]): TestModel[] {
  * Returns undefined if no credentials are available.
  */
 export function getCheapestModel(): TestModel | undefined {
-	const fast = getTestModels("fast");
-	if (fast.length > 0) return fast[0];
-	const mid = getTestModels("mid");
-	if (mid.length > 0) return mid[0];
-	return getTestModels()[0];
+  const fast = getTestModels('fast')
+  if (fast.length > 0) return fast[0]
+  const mid = getTestModels('mid')
+  if (mid.length > 0) return mid[0]
+  return getTestModels()[0]
 }
 
 function requestUrl(input: string | URL | Request): string {
-	if (typeof input === "string") return input;
-	if (input instanceof URL) return input.href;
-	return input.url;
+  if (typeof input === 'string') return input
+  if (input instanceof URL) return input.href
+  return input.url
 }
 
 /**
@@ -117,36 +118,36 @@ function requestUrl(input: string | URL | Request): string {
  * response body and status.
  */
 export function createTestClient(proxyApp: ReturnType<typeof testApp>): OpenAI {
-	return new OpenAI({
-		apiKey: "test-key-unused",
-		baseURL: "http://localhost:4141/v1",
-		maxRetries: 0,
-		fetch: async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-			const url = requestUrl(input);
-			const path = new URL(url).pathname;
-			const method = init?.method ?? "GET";
-			const headers = init?.headers ?? {};
-			const body = init?.body ?? null;
+  return new OpenAI({
+    apiKey: 'test-key-unused',
+    baseURL: 'http://localhost:4141/v1',
+    maxRetries: 0,
+    fetch: async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input)
+      const path = new URL(url).pathname
+      const method = init?.method ?? 'GET'
+      const headers = init?.headers ?? {}
+      const body = init?.body ?? null
 
-			const honoRes = await proxyApp.request(path, {
-				method,
-				headers,
-				body,
-			});
+      const honoRes = await proxyApp.request(path, {
+        method,
+        headers,
+        body
+      })
 
-			// Bridge Hono Response -> globalThis.Response for the SDK
-			return new globalThis.Response(honoRes.body, {
-				status: honoRes.status,
-				statusText: honoRes.statusText,
-				headers: Object.fromEntries(honoRes.headers.entries()),
-			});
-		},
-	});
+      // Bridge Hono Response -> globalThis.Response for the SDK
+      return new globalThis.Response(honoRes.body, {
+        status: honoRes.status,
+        statusText: honoRes.statusText,
+        headers: Object.fromEntries(honoRes.headers.entries())
+      })
+    }
+  })
 }
 
 /**
  * Returns true if at least one test model has credentials configured.
  */
 export function hasCredentials(): boolean {
-	return getTestModels().length > 0;
+  return getTestModels().length > 0
 }

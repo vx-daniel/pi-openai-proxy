@@ -22,126 +22,130 @@
  * imported here and are not discovered as separate extensions.
  */
 
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import type { ExtensionAPI, ExtensionCommandContext } from '@earendil-works/pi-coding-agent'
 import {
-	DEFAULT_CONFIG,
-	getConfigPath,
-	loadConfigFromFile,
-	saveConfigToFile,
-} from "@victor-software-house/pi-openai-proxy/config";
+  DEFAULT_CONFIG,
+  getConfigPath,
+  loadConfigFromFile,
+  saveConfigToFile
+} from '@victor-software-house/pi-openai-proxy/config'
+
 import {
-	refreshStatus,
-	restartProxy,
-	showStatus,
-	startProxy,
-	stopProxy,
-	stopSessionProcess,
-} from "./process";
-import { showConfig, showModels, verifyExposure } from "./reports";
-import { openSettingsPanel } from "./settings-panel";
-import { createProxyState, type ProxyState, useModelRegistry } from "./state";
-import { handleZedSync, maybeAutoSyncZed } from "./zed-sync";
+  refreshStatus,
+  restartProxy,
+  showStatus,
+  startProxy,
+  stopProxy,
+  stopSessionProcess
+} from './process'
+import { showConfig, showModels, verifyExposure } from './reports'
+import { openSettingsPanel } from './settings-panel'
+import { createProxyState, type ProxyState, useModelRegistry } from './state'
+import { handleZedSync, maybeAutoSyncZed } from './zed-sync'
 
 const SUBCOMMANDS = [
-	"start",
-	"stop",
-	"restart",
-	"status",
-	"verify",
-	"models",
-	"zed-sync",
-	"config",
-	"show",
-	"path",
-	"reset",
-	"help",
-];
+  'start',
+  'stop',
+  'restart',
+  'status',
+  'verify',
+  'models',
+  'zed-sync',
+  'config',
+  'show',
+  'path',
+  'reset',
+  'help'
+]
 const USAGE =
-	"/proxy [start|stop|restart|status|verify|models|zed-sync|config|show|path|reset|help]";
+  '/proxy [start|stop|restart|status|verify|models|zed-sync|config|show|path|reset|help]'
 
 type SubcommandHandler = (
-	state: ProxyState,
-	ctx: ExtensionCommandContext,
-	args: string,
-) => Promise<void> | void;
+  state: ProxyState,
+  context: ExtensionCommandContext,
+  args: string
+) => Promise<void> | void
 
 /** Subcommands other than the settings panel (`""` and `config`). */
 const SUBCOMMAND_HANDLERS: Record<string, SubcommandHandler> = {
-	start: startProxy,
-	stop: stopProxy,
-	restart: restartProxy,
-	status: showStatus,
-	verify: verifyExposure,
-	models: showModels,
-	"zed-sync": handleZedSync,
-	show: showConfig,
-	path: (_state, ctx) => {
-		ctx.ui.notify(getConfigPath(), "info");
-	},
-	reset: (state, ctx) => {
-		state.config = { ...DEFAULT_CONFIG };
-		saveConfigToFile(state.config);
-		ctx.ui.notify("Proxy settings reset to defaults", "info");
-	},
-	help: (_state, ctx) => {
-		ctx.ui.notify(USAGE, "info");
-	},
-};
+  'start': startProxy,
+  'stop': stopProxy,
+  'restart': restartProxy,
+  'status': showStatus,
+  'verify': verifyExposure,
+  'models': showModels,
+  'zed-sync': handleZedSync,
+  'show': showConfig,
+  'path': (_state, context) => {
+    context.ui.notify(getConfigPath(), 'info')
+  },
+  'reset': (state, context) => {
+    state.config = { ...DEFAULT_CONFIG }
+    saveConfigToFile(state.config)
+    context.ui.notify('Proxy settings reset to defaults', 'info')
+  },
+  'help': (_state, context) => {
+    context.ui.notify(USAGE, 'info')
+  }
+}
 
 async function openSettingsPanelIfInteractive(
-	state: ProxyState,
-	ctx: ExtensionCommandContext,
+  state: ProxyState,
+  context: ExtensionCommandContext
 ): Promise<void> {
-	if (!ctx.hasUI) {
-		ctx.ui.notify("/proxy requires interactive mode. Use /proxy show instead.", "warning");
-		return;
-	}
-	await openSettingsPanel(state, ctx);
+  if (!context.hasUI) {
+    context.ui.notify('/proxy requires interactive mode. Use /proxy show instead.', 'warning')
+    return
+  }
+  await openSettingsPanel(state, context)
 }
 
 export default function proxyExtension(pi: ExtensionAPI): void {
-	// This file lives at <package root>/extensions/proxy/index.ts.
-	const extensionDir = dirname(fileURLToPath(import.meta.url));
-	const state = createProxyState(resolve(extensionDir, "..", ".."));
+  // This file lives at <package root>/extensions/proxy/index.ts.
+  const extensionDir = dirname(fileURLToPath(import.meta.url))
+  const state = createProxyState(resolve(extensionDir, '..', '..'))
 
-	// --- Lifecycle ---
+  // --- Lifecycle ---
 
-	pi.on("session_start", async (_event, ctx) => {
-		await useModelRegistry(state, ctx);
-		state.config = loadConfigFromFile();
-		await maybeAutoSyncZed(state, ctx);
-		await refreshStatus(state, ctx);
-	});
+  pi.on('session_start', async (_event, context) => {
+    await useModelRegistry(state, context)
+    state.config = loadConfigFromFile()
+    await maybeAutoSyncZed(state, context)
+    await refreshStatus(state, context)
+  })
 
-	pi.on("session_shutdown", async () => {
-		stopSessionProcess(state);
-	});
+  pi.on('session_shutdown', async () => {
+    stopSessionProcess(state)
+  })
 
-	// --- Command family ---
+  // --- Command family ---
 
-	pi.registerCommand("proxy", {
-		description: "Manage the OpenAI-compatible proxy",
-		getArgumentCompletions: (prefix) => {
-			const trimmed = prefix.trimStart();
-			const matches = SUBCOMMANDS.filter((s) => s.startsWith(trimmed));
-			return matches.length > 0 ? matches.map((value) => ({ value, label: value })) : null;
-		},
-		handler: async (args, ctx) => {
-			await useModelRegistry(state, ctx);
-			const sub = args.trim().split(/\s+/)[0] ?? "";
+  pi.registerCommand('proxy', {
+    description: 'Manage the OpenAI-compatible proxy',
+    getArgumentCompletions: (prefix) => {
+      const trimmed = prefix.trimStart()
+      const matches = SUBCOMMANDS.filter((subcommand) => subcommand.startsWith(trimmed))
+      return matches.length > 0
+        ? matches.map((subcommand) => ({ value: subcommand, label: subcommand }))
+        : null
+    },
+    handler: async (args, context) => {
+      await useModelRegistry(state, context)
+      const sub = args.trim().split(/\s+/)[0] ?? ''
 
-			if (sub === "" || sub === "config") {
-				await openSettingsPanelIfInteractive(state, ctx);
-				return;
-			}
-			const run = Object.hasOwn(SUBCOMMAND_HANDLERS, sub) ? SUBCOMMAND_HANDLERS[sub] : undefined;
-			if (run === undefined) {
-				ctx.ui.notify(USAGE, "warning");
-				return;
-			}
-			await run(state, ctx, args);
-		},
-	});
+      if (sub === '' || sub === 'config') {
+        await openSettingsPanelIfInteractive(state, context)
+        return
+      }
+      const run = Object.hasOwn(SUBCOMMAND_HANDLERS, sub) ? SUBCOMMAND_HANDLERS[sub] : undefined
+      if (run === undefined) {
+        context.ui.notify(USAGE, 'warning')
+        return
+      }
+      await run(state, context, args)
+    }
+  })
 }

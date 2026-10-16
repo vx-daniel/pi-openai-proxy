@@ -17,80 +17,79 @@
  *     managed via the proxy's own `customModels` config
  */
 
-import type { Api, Model } from "@earendil-works/pi-ai";
-import type { ModelExposureMode, PublicModelIdMode } from "@proxy/config/schema";
+import type { Api, Model } from '@earendil-works/pi-ai'
+import type { ModelExposureMode, PublicModelIdMode } from '@proxy/config/schema'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export interface ExposedModel {
-	/** The public ID exposed on the HTTP API. */
-	readonly publicId: string;
-	/** The canonical internal ID: "provider/model-id". */
-	readonly canonicalId: string;
-	/** The underlying pi model. */
-	readonly model: Model<Api>;
-	/** The provider key. */
-	readonly provider: string;
+  /** The public ID exposed on the HTTP API. */
+  readonly publicId: string
+  /** The canonical internal ID: "provider/model-id". */
+  readonly canonicalId: string
+  /** The underlying pi model. */
+  readonly model: Model<Api>
+  /** The provider key. */
+  readonly provider: string
 }
 
 export interface ModelExposureConfig {
-	readonly publicModelIdMode: PublicModelIdMode;
-	readonly modelExposureMode: ModelExposureMode;
-	/**
-	 * Canonical model IDs from pi's global `enabledModels` setting.
-	 * Read from `SettingsManager.getEnabledModels()` at request time.
-	 * Undefined or empty means no filter (all available models exposed).
-	 * Used only when modelExposureMode is "scoped".
-	 */
-	readonly enabledModels: readonly string[] | undefined;
-	readonly customModels: readonly string[];
-	readonly providerPrefixes: Readonly<Record<string, string>>;
+  readonly publicModelIdMode: PublicModelIdMode
+  readonly modelExposureMode: ModelExposureMode
+  /**
+   * Canonical model IDs from pi's global `enabledModels` setting.
+   * Read from `SettingsManager.getEnabledModels()` at request time.
+   * Undefined or empty means no filter (all available models exposed).
+   * Used only when modelExposureMode is "scoped".
+   */
+  readonly enabledModels: readonly string[] | undefined
+  readonly customModels: readonly string[]
+  readonly providerPrefixes: Readonly<Record<string, string>>
 }
 
 export interface ModelExposureResult {
-	readonly ok: true;
-	/** All exposed models with public IDs. */
-	readonly models: readonly ExposedModel[];
-	/** Public ID -> ExposedModel for O(1) lookup. */
-	readonly byPublicId: ReadonlyMap<string, ExposedModel>;
-	/** Canonical ID -> ExposedModel for backward-compat fallback. */
-	readonly byCanonicalId: ReadonlyMap<string, ExposedModel>;
+  readonly ok: true
+  /** All exposed models with public IDs. */
+  readonly models: readonly ExposedModel[]
+  /** Public ID -> ExposedModel for O(1) lookup. */
+  readonly byPublicId: ReadonlyMap<string, ExposedModel>
+  /** Canonical ID -> ExposedModel for backward-compat fallback. */
+  readonly byCanonicalId: ReadonlyMap<string, ExposedModel>
 }
 
 export interface ModelExposureError {
-	readonly ok: false;
-	readonly message: string;
+  readonly ok: false
+  readonly message: string
 }
 
-export type ModelExposureOutcome = ModelExposureResult | ModelExposureError;
+export type ModelExposureOutcome = ModelExposureResult | ModelExposureError
 
 // ---------------------------------------------------------------------------
 // Exposure filtering
 // ---------------------------------------------------------------------------
 
 function filterExposedModels(
-	available: readonly Model<Api>[],
-	config: ModelExposureConfig,
+  available: readonly Model<Api>[],
+  config: ModelExposureConfig
 ): Model<Api>[] {
-	// "all": expose all auth-configured models — same as pi's getAvailable().
-	if (config.modelExposureMode === "all") {
-		return [...available];
-	}
+  // "all": expose all auth-configured models — same as pi's getAvailable().
+  if (config.modelExposureMode === 'all') {
+    return [...available]
+  }
 
-	// "scoped" delegates to pi's global `enabledModels` setting — the canonical IDs
-	// persisted by `/scoped-models` (Ctrl+S) in pi's interactive mode.
-	// "custom" uses the same per-model canonical ID filtering, but from the
-	// proxy's own `customModels` config instead of pi's settings.
-	// When no filter is configured, all available models are exposed.
-	const enabled =
-		config.modelExposureMode === "scoped" ? config.enabledModels : config.customModels;
-	if (enabled === undefined || enabled.length === 0) {
-		return [...available];
-	}
-	const allowed = new Set(enabled);
-	return available.filter((m) => allowed.has(`${m.provider}/${m.id}`));
+  // "scoped" delegates to pi's global `enabledModels` setting — the canonical IDs
+  // persisted by `/scoped-models` (Ctrl+S) in pi's interactive mode.
+  // "custom" uses the same per-model canonical ID filtering, but from the
+  // proxy's own `customModels` config instead of pi's settings.
+  // When no filter is configured, all available models are exposed.
+  const enabled = config.modelExposureMode === 'scoped' ? config.enabledModels : config.customModels
+  if (enabled === undefined || enabled.length === 0) {
+    return [...available]
+  }
+  const allowed = new Set(enabled)
+  return available.filter((model) => allowed.has(`${model.provider}/${model.id}`))
 }
 
 // ---------------------------------------------------------------------------
@@ -102,8 +101,8 @@ function filterExposedModels(
  * Uses the configured override if present, otherwise the provider key itself.
  */
 function getPublicPrefix(provider: string, prefixes: Readonly<Record<string, string>>): string {
-	const override = prefixes[provider];
-	return override !== undefined && override.length > 0 ? override : provider;
+  const override = prefixes[provider]
+  return override !== undefined && override.length > 0 ? override : provider
 }
 
 /**
@@ -113,139 +112,139 @@ function getPublicPrefix(provider: string, prefixes: Readonly<Record<string, str
  * then {A, B, C} form one connected conflict group.
  */
 function findConflictGroups(models: readonly Model<Api>[]): Set<string>[] {
-	// Map each raw model ID to the set of providers that offer it
-	const modelToProviders = new Map<string, Set<string>>();
-	for (const m of models) {
-		const existing = modelToProviders.get(m.id);
-		if (existing === undefined) {
-			modelToProviders.set(m.id, new Set([m.provider]));
-		} else {
-			existing.add(m.provider);
-		}
-	}
+  // Map each raw model ID to the set of providers that offer it
+  const modelToProviders = new Map<string, Set<string>>()
+  for (const model of models) {
+    const existing = modelToProviders.get(model.id)
+    if (existing === undefined) {
+      modelToProviders.set(model.id, new Set([model.provider]))
+    } else {
+      existing.add(model.provider)
+    }
+  }
 
-	// Union-Find for providers
-	const parent = new Map<string, string>();
+  // Union-Find for providers
+  const parent = new Map<string, string>()
 
-	function find(x: string): string {
-		let root = x;
-		while (parent.get(root) !== root) {
-			const p = parent.get(root);
-			if (p === undefined) break;
-			root = p;
-		}
-		// Path compression
-		let current = x;
-		while (current !== root) {
-			const next = parent.get(current);
-			if (next === undefined) break;
-			parent.set(current, root);
-			current = next;
-		}
-		return root;
-	}
+  function find(provider: string): string {
+    let root = provider
+    while (parent.get(root) !== root) {
+      const parentProvider = parent.get(root)
+      if (parentProvider === undefined) break
+      root = parentProvider
+    }
+    // Path compression
+    let current = provider
+    while (current !== root) {
+      const next = parent.get(current)
+      if (next === undefined) break
+      parent.set(current, root)
+      current = next
+    }
+    return root
+  }
 
-	function union(a: string, b: string): void {
-		const ra = find(a);
-		const rb = find(b);
-		if (ra !== rb) {
-			parent.set(ra, rb);
-		}
-	}
+  function union(firstProvider: string, secondProvider: string): void {
+    const rootA = find(firstProvider)
+    const rootB = find(secondProvider)
+    if (rootA !== rootB) {
+      parent.set(rootA, rootB)
+    }
+  }
 
-	// Initialize each provider as its own root
-	for (const m of models) {
-		if (!parent.has(m.provider)) {
-			parent.set(m.provider, m.provider);
-		}
-	}
+  // Initialize each provider as its own root
+  for (const model of models) {
+    if (!parent.has(model.provider)) {
+      parent.set(model.provider, model.provider)
+    }
+  }
 
-	// Union providers that share any model ID
-	for (const providers of modelToProviders.values()) {
-		if (providers.size <= 1) continue;
-		const arr = [...providers];
-		const first = arr[0];
-		if (first === undefined) continue;
-		for (let i = 1; i < arr.length; i++) {
-			const other = arr[i];
-			if (other !== undefined) {
-				union(first, other);
-			}
-		}
-	}
+  // Union providers that share any model ID
+  for (const providers of modelToProviders.values()) {
+    if (providers.size <= 1) continue
+    const sharingProviders = [...providers]
+    const first = sharingProviders[0]
+    if (first === undefined) continue
+    for (let providerIndex = 1; providerIndex < sharingProviders.length; providerIndex++) {
+      const other = sharingProviders[providerIndex]
+      if (other !== undefined) {
+        union(first, other)
+      }
+    }
+  }
 
-	// Collect groups by root
-	const groupsByRoot = new Map<string, Set<string>>();
-	for (const provider of parent.keys()) {
-		const root = find(provider);
-		const existing = groupsByRoot.get(root);
-		if (existing === undefined) {
-			groupsByRoot.set(root, new Set([provider]));
-		} else {
-			existing.add(provider);
-		}
-	}
+  // Collect groups by root
+  const groupsByRoot = new Map<string, Set<string>>()
+  for (const provider of parent.keys()) {
+    const root = find(provider)
+    const existing = groupsByRoot.get(root)
+    if (existing === undefined) {
+      groupsByRoot.set(root, new Set([provider]))
+    } else {
+      existing.add(provider)
+    }
+  }
 
-	// Return only groups with more than one provider (actual conflicts)
-	return [...groupsByRoot.values()].filter((g) => g.size > 1);
+  // Return only groups with more than one provider (actual conflicts)
+  return [...groupsByRoot.values()].filter((group) => group.size > 1)
 }
 
 function generateCollisionPrefixedIds(
-	models: readonly Model<Api>[],
-	prefixes: Readonly<Record<string, string>>,
+  models: readonly Model<Api>[],
+  prefixes: Readonly<Record<string, string>>
 ): Map<Model<Api>, string> {
-	const conflictGroups = findConflictGroups(models);
-	const prefixedProviders = new Set<string>();
-	for (const group of conflictGroups) {
-		for (const provider of group) {
-			prefixedProviders.add(provider);
-		}
-	}
+  const conflictGroups = findConflictGroups(models)
+  const prefixedProviders = new Set<string>()
+  for (const group of conflictGroups) {
+    for (const provider of group) {
+      prefixedProviders.add(provider)
+    }
+  }
 
-	const result = new Map<Model<Api>, string>();
-	for (const m of models) {
-		if (prefixedProviders.has(m.provider)) {
-			const prefix = getPublicPrefix(m.provider, prefixes);
-			result.set(m, `${prefix}/${m.id}`);
-		} else {
-			result.set(m, m.id);
-		}
-	}
-	return result;
+  const result = new Map<Model<Api>, string>()
+  for (const model of models) {
+    if (prefixedProviders.has(model.provider)) {
+      const prefix = getPublicPrefix(model.provider, prefixes)
+      result.set(model, `${prefix}/${model.id}`)
+    } else {
+      result.set(model, model.id)
+    }
+  }
+  return result
 }
 
 function generateUniversalIds(models: readonly Model<Api>[]): Map<Model<Api>, string> | string {
-	// Check for duplicates
-	const seen = new Map<string, string>();
-	for (const m of models) {
-		const existing = seen.get(m.id);
-		if (existing !== undefined) {
-			return (
-				`Universal mode conflict: model ID '${m.id}' is provided by both ` +
-				`'${existing}' and '${m.provider}'. Use 'collision-prefixed' or ` +
-				`'always-prefixed' mode, or reduce the exposed model set.`
-			);
-		}
-		seen.set(m.id, m.provider);
-	}
+  // Check for duplicates
+  const seen = new Map<string, string>()
+  for (const model of models) {
+    const existing = seen.get(model.id)
+    if (existing !== undefined) {
+      return (
+        `Universal mode conflict: model ID '${model.id}' is provided by both ` +
+        `'${existing}' and '${model.provider}'. Use 'collision-prefixed' or ` +
+        `'always-prefixed' mode, or reduce the exposed model set.`
+      )
+    }
+    seen.set(model.id, model.provider)
+  }
 
-	const result = new Map<Model<Api>, string>();
-	for (const m of models) {
-		result.set(m, m.id);
-	}
-	return result;
+  const result = new Map<Model<Api>, string>()
+  for (const model of models) {
+    result.set(model, model.id)
+  }
+  return result
 }
 
 function generateAlwaysPrefixedIds(
-	models: readonly Model<Api>[],
-	prefixes: Readonly<Record<string, string>>,
+  models: readonly Model<Api>[],
+  prefixes: Readonly<Record<string, string>>
 ): Map<Model<Api>, string> {
-	const result = new Map<Model<Api>, string>();
-	for (const m of models) {
-		const prefix = getPublicPrefix(m.provider, prefixes);
-		result.set(m, `${prefix}/${m.id}`);
-	}
-	return result;
+  const result = new Map<Model<Api>, string>()
+  for (const model of models) {
+    const prefix = getPublicPrefix(model.provider, prefixes)
+    result.set(model, `${prefix}/${model.id}`)
+  }
+  return result
 }
 
 // ---------------------------------------------------------------------------
@@ -253,43 +252,43 @@ function generateAlwaysPrefixedIds(
 // ---------------------------------------------------------------------------
 
 function validatePrefixUniqueness(
-	models: readonly Model<Api>[],
-	prefixes: Readonly<Record<string, string>>,
-	mode: PublicModelIdMode,
+  models: readonly Model<Api>[],
+  prefixes: Readonly<Record<string, string>>,
+  mode: PublicModelIdMode
 ): string | undefined {
-	if (mode === "universal") return undefined;
+  if (mode === 'universal') return undefined
 
-	// Collect providers that will use prefixes
-	const providers = new Set<string>();
-	if (mode === "always-prefixed") {
-		for (const m of models) {
-			providers.add(m.provider);
-		}
-	} else {
-		// collision-prefixed: only conflicting providers get prefixed
-		const conflictGroups = findConflictGroups(models);
-		for (const group of conflictGroups) {
-			for (const provider of group) {
-				providers.add(provider);
-			}
-		}
-	}
+  // Collect providers that will use prefixes
+  const providers = new Set<string>()
+  if (mode === 'always-prefixed') {
+    for (const model of models) {
+      providers.add(model.provider)
+    }
+  } else {
+    // collision-prefixed: only conflicting providers get prefixed
+    const conflictGroups = findConflictGroups(models)
+    for (const group of conflictGroups) {
+      for (const provider of group) {
+        providers.add(provider)
+      }
+    }
+  }
 
-	// Check that resolved prefix labels are unique
-	const labelToProvider = new Map<string, string>();
-	for (const provider of providers) {
-		const label = getPublicPrefix(provider, prefixes);
-		const existing = labelToProvider.get(label);
-		if (existing !== undefined) {
-			return (
-				`Duplicate prefix label '${label}' used by providers ` +
-				`'${existing}' and '${provider}'. Configure distinct providerPrefixes.`
-			);
-		}
-		labelToProvider.set(label, provider);
-	}
+  // Check that resolved prefix labels are unique
+  const labelToProvider = new Map<string, string>()
+  for (const provider of providers) {
+    const label = getPublicPrefix(provider, prefixes)
+    const existing = labelToProvider.get(label)
+    if (existing !== undefined) {
+      return (
+        `Duplicate prefix label '${label}' used by providers ` +
+        `'${existing}' and '${provider}'. Configure distinct providerPrefixes.`
+      )
+    }
+    labelToProvider.set(label, provider)
+  }
 
-	return undefined;
+  return undefined
 }
 
 // ---------------------------------------------------------------------------
@@ -305,67 +304,67 @@ function validatePrefixUniqueness(
  * Call this at startup and whenever config or the model registry changes.
  */
 export function computeModelExposure(
-	available: readonly Model<Api>[],
-	config: ModelExposureConfig,
+  available: readonly Model<Api>[],
+  config: ModelExposureConfig
 ): ModelExposureOutcome {
-	// 1. Filter to exposed set
-	const exposed = filterExposedModels(available, config);
+  // 1. Filter to exposed set
+  const exposed = filterExposedModels(available, config)
 
-	// 2. Validate prefix uniqueness (before generating IDs)
-	const prefixError = validatePrefixUniqueness(
-		exposed,
-		config.providerPrefixes,
-		config.publicModelIdMode,
-	);
-	if (prefixError !== undefined) {
-		return { ok: false, message: prefixError };
-	}
+  // 2. Validate prefix uniqueness (before generating IDs)
+  const prefixError = validatePrefixUniqueness(
+    exposed,
+    config.providerPrefixes,
+    config.publicModelIdMode
+  )
+  if (prefixError !== undefined) {
+    return { ok: false, message: prefixError }
+  }
 
-	// 3. Generate public IDs based on mode
-	let idMap: Map<Model<Api>, string>;
+  // 3. Generate public IDs based on mode
+  let idMap: Map<Model<Api>, string>
 
-	switch (config.publicModelIdMode) {
-		case "collision-prefixed":
-			idMap = generateCollisionPrefixedIds(exposed, config.providerPrefixes);
-			break;
+  switch (config.publicModelIdMode) {
+    case 'collision-prefixed':
+      idMap = generateCollisionPrefixedIds(exposed, config.providerPrefixes)
+      break
 
-		case "universal": {
-			const result = generateUniversalIds(exposed);
-			if (typeof result === "string") {
-				return { ok: false, message: result };
-			}
-			idMap = result;
-			break;
-		}
+    case 'universal': {
+      const result = generateUniversalIds(exposed)
+      if (typeof result === 'string') {
+        return { ok: false, message: result }
+      }
+      idMap = result
+      break
+    }
 
-		case "always-prefixed":
-			idMap = generateAlwaysPrefixedIds(exposed, config.providerPrefixes);
-			break;
-	}
+    case 'always-prefixed':
+      idMap = generateAlwaysPrefixedIds(exposed, config.providerPrefixes)
+      break
+  }
 
-	// 4. Build exposed model objects and lookup maps
-	const models: ExposedModel[] = [];
-	const byPublicId = new Map<string, ExposedModel>();
-	const byCanonicalId = new Map<string, ExposedModel>();
+  // 4. Build exposed model objects and lookup maps
+  const models: ExposedModel[] = []
+  const byPublicId = new Map<string, ExposedModel>()
+  const byCanonicalId = new Map<string, ExposedModel>()
 
-	for (const m of exposed) {
-		const publicId = idMap.get(m);
-		if (publicId === undefined) continue;
+  for (const model of exposed) {
+    const publicId = idMap.get(model)
+    if (publicId === undefined) continue
 
-		const canonicalId = `${m.provider}/${m.id}`;
-		const entry: ExposedModel = {
-			publicId,
-			canonicalId,
-			model: m,
-			provider: m.provider,
-		};
+    const canonicalId = `${model.provider}/${model.id}`
+    const entry: ExposedModel = {
+      publicId,
+      canonicalId,
+      model,
+      provider: model.provider
+    }
 
-		models.push(entry);
-		byPublicId.set(publicId, entry);
-		byCanonicalId.set(canonicalId, entry);
-	}
+    models.push(entry)
+    byPublicId.set(publicId, entry)
+    byCanonicalId.set(canonicalId, entry)
+  }
 
-	return { ok: true, models, byPublicId, byCanonicalId };
+  return { ok: true, models, byPublicId, byCanonicalId }
 }
 
 /**
@@ -376,13 +375,13 @@ export function computeModelExposure(
  *   2. Exact canonical ID match (backward compat, only if model is exposed)
  */
 export function resolveExposedModel(
-	exposure: ModelExposureResult,
-	requestModelId: string,
+  exposure: ModelExposureResult,
+  requestModelId: string
 ): ExposedModel | undefined {
-	// 1. Try exact public ID
-	const byPublic = exposure.byPublicId.get(requestModelId);
-	if (byPublic !== undefined) return byPublic;
+  // 1. Try exact public ID
+  const byPublic = exposure.byPublicId.get(requestModelId)
+  if (byPublic !== undefined) return byPublic
 
-	// 2. Try canonical ID fallback (only for exposed models)
-	return exposure.byCanonicalId.get(requestModelId);
+  // 2. Try canonical ID fallback (only for exposed models)
+  return exposure.byCanonicalId.get(requestModelId)
 }

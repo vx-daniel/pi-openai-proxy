@@ -5,41 +5,42 @@
  * responses parse correctly. Skips when no credentials are available.
  */
 
-import { describe, expect, test } from "vite-plus/test";
-import { createTestClient, getCheapestModel, hasCredentials, setup } from "./helpers";
+import { describe, expect, test } from 'vite-plus/test'
 
-describe("SDK models conformance", () => {
-	test("client.models.list() returns iterable model objects", async () => {
-		if (!hasCredentials()) return;
+import { createTestClient, getCheapestModel, hasCredentials, setup } from './helpers'
 
-		const { app } = setup();
-		const client = createTestClient(app);
-		const response = await client.models.list();
+describe('SDK models conformance', () => {
+  test('client.models.list() returns iterable model objects', async () => {
+    if (!hasCredentials()) return
 
-		const models: unknown[] = [];
-		for await (const model of response) {
-			models.push(model);
-		}
+    const { app } = setup()
+    const client = createTestClient(app)
+    const response = await client.models.list()
 
-		expect(models.length).toBeGreaterThan(0);
+    const models: unknown[] = []
+    for await (const model of response) {
+      models.push(model)
+    }
 
-		const first = models[0] as Record<string, unknown>;
-		expect(first["id"]).toBeTypeOf("string");
-		expect(first["object"]).toBe("model");
-		expect(first["created"]).toBeTypeOf("number");
-		expect(first["owned_by"]).toBeTypeOf("string");
-	});
+    expect(models.length).toBeGreaterThan(0)
 
-	test("client.models.retrieve() returns a model object", async () => {
-		const model = getCheapestModel();
-		if (model === undefined) return;
+    const first = models[0] as Record<string, unknown>
+    expect(first['id']).toBeTypeOf('string')
+    expect(first['object']).toBe('model')
+    expect(first['created']).toBeTypeOf('number')
+    expect(first['owned_by']).toBeTypeOf('string')
+  })
 
-		const { app } = setup();
-		const client = createTestClient(app);
-		const result = await client.models.retrieve(model.id);
+  test('client.models.retrieve() returns a model object', async () => {
+    const model = getCheapestModel()
+    if (model === undefined) return
 
-		expect(result.object).toBe("model");
-		expect(result.created).toBeTypeOf("number");
-		expect(result.owned_by).toBeTypeOf("string");
-	});
-});
+    const { app } = setup()
+    const client = createTestClient(app)
+    const result = await client.models.retrieve(model.id)
+
+    expect(result.object).toBe('model')
+    expect(result.created).toBeTypeOf('number')
+    expect(result.owned_by).toBeTypeOf('string')
+  })
+})

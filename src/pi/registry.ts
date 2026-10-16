@@ -9,38 +9,38 @@
  * owns credentials, catalogs and request authentication in one place.
  */
 
-import type { Api, Model } from "@earendil-works/pi-ai";
-import { ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
+import type { Api, Model } from '@earendil-works/pi-ai'
+import { ModelRuntime, SettingsManager } from '@earendil-works/pi-coding-agent'
 
-let runtime: ModelRuntime | undefined;
-let settingsManager: SettingsManager | undefined;
+let runtime: ModelRuntime | undefined
+let settingsManager: SettingsManager | undefined
 
 /** Outcome of resolving request auth for a model: usable, or why not. */
-export type RequestAuthResult = { ok: true } | { ok: false; error: string };
+export type RequestAuthResult = { ok: true } | { ok: false; error: string }
 
 /**
  * Initialize the runtime and settings. Call once at startup.
  * Returns the load error if models.json failed to parse, or undefined on success.
  */
 export async function initRegistry(): Promise<string | undefined> {
-	runtime = await ModelRuntime.create();
-	settingsManager = SettingsManager.create(process.cwd());
-	return runtime.getError();
+  runtime = await ModelRuntime.create()
+  settingsManager = SettingsManager.create(process.cwd())
+  return runtime.getError()
 }
 
 /** The initialized model runtime, which also runs completions (see `src/pi/complete.ts`). */
 export function getRuntime(): ModelRuntime {
-	if (runtime === undefined) {
-		throw new Error("ModelRuntime not initialized. Call initRegistry() first.");
-	}
-	return runtime;
+  if (runtime === undefined) {
+    throw new Error('ModelRuntime not initialized. Call initRegistry() first.')
+  }
+  return runtime
 }
 
 export function getSettingsManager(): SettingsManager {
-	if (settingsManager === undefined) {
-		throw new Error("SettingsManager not initialized. Call initRegistry() first.");
-	}
-	return settingsManager;
+  if (settingsManager === undefined) {
+    throw new Error('SettingsManager not initialized. Call initRegistry() first.')
+  }
+  return settingsManager
 }
 
 /**
@@ -52,7 +52,7 @@ export function getSettingsManager(): SettingsManager {
  * synchronous and cheap.
  */
 export function getAvailableModels(): Model<Api>[] {
-	return [...getRuntime().getAvailableSnapshot()];
+  return [...getRuntime().getAvailableSnapshot()]
 }
 
 /**
@@ -63,15 +63,15 @@ export function getAvailableModels(): Model<Api>[] {
  * before starting a response, instead of failing mid-stream with a less actionable error.
  */
 export async function getRequestAuth(model: Model<Api>): Promise<RequestAuthResult> {
-	try {
-		const auth = await getRuntime().getAuth(model);
-		if (auth === undefined) {
-			return { ok: false, error: `no credentials configured for provider '${model.provider}'` };
-		}
-		return { ok: true };
-	} catch (error) {
-		return { ok: false, error: error instanceof Error ? error.message : String(error) };
-	}
+  try {
+    const credentials = await getRuntime().getAuth(model)
+    if (credentials === undefined) {
+      return { ok: false, error: `no credentials configured for provider '${model.provider}'` }
+    }
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 /**
@@ -83,7 +83,7 @@ export async function getRequestAuth(model: Model<Api>): Promise<RequestAuthResu
  * Returns undefined when no filter is configured (all models enabled).
  */
 export async function getEnabledModels(): Promise<readonly string[] | undefined> {
-	const manager = getSettingsManager();
-	await manager.reload();
-	return manager.getEnabledModels();
+  const manager = getSettingsManager()
+  await manager.reload()
+  return manager.getEnabledModels()
 }

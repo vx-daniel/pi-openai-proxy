@@ -6,36 +6,37 @@
  * Skips when no credentials are available.
  */
 
-import { describe, expect, test } from "vite-plus/test";
-import { createTestClient, getCheapestModel, setup } from "./helpers";
+import { describe, expect, test } from 'vite-plus/test'
 
-describe("SDK non-streaming chat conformance", () => {
-	test("simple text completion parses without SDK errors", async () => {
-		const model = getCheapestModel();
-		if (model === undefined) return;
+import { createTestClient, getCheapestModel, setup } from './helpers'
 
-		const { app } = setup();
-		const client = createTestClient(app);
+describe('SDK non-streaming chat conformance', () => {
+  test('simple text completion parses without SDK errors', async () => {
+    const model = getCheapestModel()
+    if (model === undefined) return
 
-		const completion = await client.chat.completions.create({
-			model: model.id,
-			messages: [{ role: "user", content: "Reply with exactly: hello" }],
-			max_completion_tokens: 32,
-		});
+    const { app } = setup()
+    const client = createTestClient(app)
 
-		expect(completion.object).toBe("chat.completion");
-		expect(completion.id).toBeTypeOf("string");
-		expect(completion.created).toBeTypeOf("number");
-		expect(completion.choices.length).toBe(1);
+    const completion = await client.chat.completions.create({
+      model: model.id,
+      messages: [{ role: 'user', content: 'Reply with exactly: hello' }],
+      max_completion_tokens: 32
+    })
 
-		const choice = completion.choices[0];
-		expect(choice).toBeDefined();
-		expect(choice?.message.role).toBe("assistant");
-		expect(choice?.finish_reason).not.toBeNull();
+    expect(completion.object).toBe('chat.completion')
+    expect(completion.id).toBeTypeOf('string')
+    expect(completion.created).toBeTypeOf('number')
+    expect(completion.choices.length).toBe(1)
 
-		expect(completion.usage).toBeDefined();
-		expect(completion.usage?.prompt_tokens).toBeTypeOf("number");
-		expect(completion.usage?.completion_tokens).toBeTypeOf("number");
-		expect(completion.usage?.total_tokens).toBeTypeOf("number");
-	});
-});
+    const choice = completion.choices[0]
+    expect(choice).toBeDefined()
+    expect(choice?.message.role).toBe('assistant')
+    expect(choice?.finish_reason).not.toBeNull()
+
+    expect(completion.usage).toBeDefined()
+    expect(completion.usage?.prompt_tokens).toBeTypeOf('number')
+    expect(completion.usage?.completion_tokens).toBeTypeOf('number')
+    expect(completion.usage?.total_tokens).toBeTypeOf('number')
+  })
+})
