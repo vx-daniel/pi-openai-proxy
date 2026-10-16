@@ -13,9 +13,12 @@ import type {
   SimpleStreamOptions,
   ThinkingLevel
 } from '@earendil-works/pi-ai'
+import { proxyLogger } from '@proxy/logging'
 import type { ChatCompletionRequest, OpenAIFunctionTool } from '@proxy/openai/schemas'
 import { getRuntime } from '@proxy/pi/registry'
 import { isRecord } from '@proxy/utils/guards'
+
+const completeLogger = proxyLogger('pi', 'complete')
 
 /**
  * Map OpenAI reasoning_effort to pi ThinkingLevel.
@@ -371,6 +374,15 @@ function isGoogleApi(api: string): boolean {
   return GOOGLE_APIS.has(api)
 }
 
+/** Which payload passthrough strategy an API gets, for logging. Mirrors `collectPayloadFields`. */
+function passthroughStrategy(api: string): 'openai' | 'codex' | 'anthropic' | 'google' | 'none' {
+  if (OPENAI_FULL_PASSTHROUGH_APIS.has(api)) return 'openai'
+  if (CODEX_APIS.has(api)) return 'codex'
+  if (ANTHROPIC_APIS.has(api)) return 'anthropic'
+  if (GOOGLE_APIS.has(api)) return 'google'
+  return 'none'
+}
+
 /**
  * Collect tool strict flags from the original OpenAI request.
  *
@@ -476,8 +488,12 @@ async function buildStreamOptions(
   const opts: SimpleStreamOptions = {}
 
   // openai-codex-responses API does not support temperature
-  if (request.temperature !== undefined && model.api !== 'openai-codex-responses') {
-    opts.temperature = request.temperature
+  if (request.temperature !== undefined) {
+    if (model.api === 'openai-codex-responses') {
+      completeLogger.debug('Dropping temperature: {api} does not support it', { api: model.api })
+    } else {
+      opts.temperature = request.temperature
+    }
   }
 
   // Normalize max_tokens / max_completion_tokens
@@ -489,7 +505,14 @@ async function buildStreamOptions(
   // Map reasoning_effort to pi ThinkingLevel
   if (request.reasoning_effort !== undefined) {
     const level = REASONING_EFFORT_MAP[request.reasoning_effort]
-    if (level !== undefined) {
+    if (level === undefined) {
+      completeLogger.warn(
+        'No pi thinking level for reasoning_effort {reasoningEffort}; ignoring it',
+        {
+          reasoningEffort: request.reasoning_effort
+        }
+      )
+    } else {
       opts.reasoning = level
     }
   }
@@ -511,6 +534,16 @@ async function buildStreamOptions(
   const payloadFields = collectPayloadFields(request, model.api)
   const strictFlags = collectToolStrictFlags(request.tools)
   const needsGooglePatch = isGoogleApi(model.api)
+  const payloadFieldNames = payloadFields === undefined ? [] : Object.keys(payloadFields)
+  const strictToolCount = strictFlags?.size ?? 0
+
+  completeLogger.debug('Payload passthrough for {api}: {passthrough}', {
+    api: model.api,
+    passthrough: passthroughStrategy(model.api),
+    payloadFields: payloadFieldNames,
+    strictToolCount,
+    googlePatch: needsGooglePatch
+  })
 
   if (payloadFields !== undefined || strictFlags !== undefined || needsGooglePatch) {
     opts.onPayload = (payload: unknown) => {
@@ -522,19 +555,136 @@ async function buildStreamOptions(
           }
         }
         // Google nested generationConfig patching
-        if (needsGooglePatch) {
-          patchGooglePayload(payload, request)
-        }
+        const googlePatched = needsGooglePatch && patchGooglePayload(payload, request)
         // Tool strict flag patching (OpenAI-compatible only)
         if (strictFlags !== undefined) {
           applyToolStrictFlags(payload, strictFlags)
         }
+        completeLogger.debug('Patched upstream payload for {api}', {
+          api: model.api,
+          patchedFields: payloadFieldNames,
+          googlePatched,
+          strictToolCount
+        })
+      } else {
+        completeLogger.warn(
+          'Upstream payload for {api} is not an object; passthrough not applied',
+          {
+            api: model.api,
+            payloadType: typeof payload
+          }
+        )
       }
       return payload
     }
   }
 
   return opts
+}
+
+/** Why an upstream call was aborted: the client went away, the upstream timeout fired, or neither. */
+function abortCause(
+  clientSignal: AbortSignal | undefined,
+  upstreamSignal: AbortSignal | undefined
+): 'client' | 'timeout' | 'unknown' {
+  if (clientSignal?.aborted === true) return 'client'
+  if (upstreamSignal?.aborted === true) return 'timeout'
+  return 'unknown'
+}
+
+/** One upstream call, as the logging helpers below see it. */
+interface UpstreamCall {
+  readonly model: Model<Api>
+  readonly options: CompletionOptions
+  readonly opts: SimpleStreamOptions
+  readonly stream: boolean
+  /** `performance.now()` when the call started. */
+  readonly startedAt: number
+}
+
+/** The properties every upstream log line carries: where the call went and how long it has run. */
+function callProperties(call: UpstreamCall): Record<string, unknown> {
+  return {
+    provider: call.model.provider,
+    modelId: call.model.id,
+    api: call.model.api,
+    stream: call.stream,
+    durationMs: Math.round(performance.now() - call.startedAt)
+  }
+}
+
+/** Log the start of an upstream call: what is sent where, never what it says. */
+function logUpstreamStart(
+  call: UpstreamCall,
+  context: Context,
+  request: ChatCompletionRequest
+): void {
+  const { model, options, opts, stream } = call
+  completeLogger.debug('Calling {provider}/{modelId} via {api}', () => ({
+    provider: model.provider,
+    modelId: model.id,
+    api: model.api,
+    stream,
+    messageCount: context.messages.length,
+    toolCount: context.tools?.length ?? 0,
+    reasoningEffort: request.reasoning_effort,
+    thinkingLevel: opts.reasoning,
+    maxTokens: opts.maxTokens,
+    upstreamTimeoutMs: options.upstreamTimeoutMs,
+    upstreamKeyOverride: options.upstreamApiKey !== undefined
+  }))
+}
+
+/** Log how an upstream call ended: stop reason, duration and usage, or why it failed. */
+function logUpstreamResult(call: UpstreamCall, message: AssistantMessage): void {
+  if (message.stopReason === 'error') {
+    completeLogger.warn('Upstream call to {modelId} failed after {durationMs} ms: {error}', () => ({
+      ...callProperties(call),
+      stopReason: message.stopReason,
+      rawStopReason: message.rawStopReason,
+      error: message.errorMessage
+    }))
+    return
+  }
+  if (message.stopReason === 'aborted') {
+    completeLogger.warn(
+      'Upstream call to {modelId} aborted after {durationMs} ms ({abortCause})',
+      () => ({
+        ...callProperties(call),
+        stopReason: message.stopReason,
+        abortCause: abortCause(call.options.signal, call.opts.signal),
+        error: message.errorMessage
+      })
+    )
+    return
+  }
+  completeLogger.debug(
+    'Upstream call to {modelId} finished in {durationMs} ms: {stopReason}',
+    () => ({
+      ...callProperties(call),
+      stopReason: message.stopReason,
+      rawStopReason: message.rawStopReason,
+      responseModel: message.responseModel,
+      inputTokens: message.usage.input,
+      outputTokens: message.usage.output,
+      cacheReadTokens: message.usage.cacheRead,
+      cacheWriteTokens: message.usage.cacheWrite,
+      reasoningTokens: message.usage.reasoning,
+      totalTokens: message.usage.totalTokens,
+      costTotal: message.usage.cost.total
+    })
+  )
+}
+
+/** Log an upstream call that threw instead of reporting an error message; the caller rethrows. */
+function logUpstreamThrow(call: UpstreamCall, error: unknown): void {
+  const aborted = call.opts.signal?.aborted === true
+  completeLogger.warn('Upstream call to {modelId} threw after {durationMs} ms: {error}', () => ({
+    ...callProperties(call),
+    aborted,
+    abortCause: aborted ? abortCause(call.options.signal, call.opts.signal) : undefined,
+    error: error instanceof Error ? error.message : String(error)
+  }))
 }
 
 /**
@@ -547,7 +697,16 @@ export async function piComplete(
   options: CompletionOptions
 ): Promise<AssistantMessage> {
   const opts = await buildStreamOptions(model, request, options)
-  return getRuntime().completeSimple(model, context, opts)
+  const call: UpstreamCall = { model, options, opts, stream: false, startedAt: performance.now() }
+  logUpstreamStart(call, context, request)
+  try {
+    const message = await getRuntime().completeSimple(model, context, opts)
+    logUpstreamResult(call, message)
+    return message
+  } catch (error) {
+    logUpstreamThrow(call, error)
+    throw error
+  }
 }
 
 /**
@@ -560,5 +719,16 @@ export async function piStream(
   options: CompletionOptions
 ): Promise<AssistantMessageEventStream> {
   const opts = await buildStreamOptions(model, request, options)
-  return getRuntime().streamSimple(model, context, opts)
+  const call: UpstreamCall = { model, options, opts, stream: true, startedAt: performance.now() }
+  logUpstreamStart(call, context, request)
+  let eventStream: AssistantMessageEventStream
+  try {
+    eventStream = getRuntime().streamSimple(model, context, opts)
+  } catch (error) {
+    logUpstreamThrow(call, error)
+    throw error
+  }
+  // Resolves with the final message once the stream ends with done or error; it never rejects.
+  void eventStream.result().then((message) => logUpstreamResult(call, message))
+  return eventStream
 }

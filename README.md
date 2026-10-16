@@ -202,6 +202,19 @@ Proxy-specific settings are configured via environment variables or the `/proxy 
 | Remote images | `PI_PROXY_REMOTE_IMAGES` | `false` | Allow remote image URL fetching |
 | Max body size | `PI_PROXY_MAX_BODY_SIZE` | `52428800` (50 MB) | Maximum request body size in bytes |
 | Upstream timeout | `PI_PROXY_UPSTREAM_TIMEOUT_MS` | `120000` (120s) | Upstream request timeout in milliseconds |
+| Log level | `PI_PROXY_LOG_LEVEL` | `info` | Lowest level logged: `trace`, `debug`, `info`, `warning`, `error`, `fatal` (also `--log-level`, and `logLevel` in the config file) |
+
+### Logging
+
+The proxy logs with [LogTape](https://logtape.org) to stderr:
+- **On a terminal:** readable, colored lines.
+- **When piped or redirected:** [JSON Lines](https://jsonlines.org), one object per record with `@timestamp`, `level`, `logger` (the category, e.g. `pi-openai-proxy.server.http`), `message` and `properties`.
+
+Every line a request causes carries its `requestId` (and `clientRequestId` when the client sent `X-Client-Request-Id`). At `debug` and `trace` you see the internal decisions: model resolution, conversion, upstream calls and stream events.
+
+Message content and credentials are never logged. Credential-named properties are redacted as a backstop.
+
+The pi extension logs nothing by default, because output would corrupt pi's terminal UI. To capture its logs, set `PI_PROXY_EXTENSION_LOG_FILE=/path/to/extension.log` before starting pi; the extension then appends JSON Lines there at the configured log level.
 
 Model exposure settings are configured via the JSON config file (`~/.pi/agent/proxy-config.json`):
 

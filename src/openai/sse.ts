@@ -12,7 +12,10 @@
  */
 
 import type { AssistantMessageEvent, Usage } from '@earendil-works/pi-ai'
+import { proxyLogger } from '@proxy/logging'
 import { mapFinishReason, mapUsage } from '@proxy/openai/responses'
+
+const sseLogger = proxyLogger('openai', 'sse')
 
 export interface SSEChunk {
   readonly id: string
@@ -112,6 +115,9 @@ function encodeToolCallStart(
   const ci = event.contentIndex
   const toolCallContent = event.partial.content[ci]
   if (toolCallContent === undefined || toolCallContent.type !== 'toolCall') {
+    sseLogger.debug('Dropped toolcall_start whose content {contentIndex} is not a tool call', {
+      contentIndex: ci
+    })
     return []
   }
   // Determine the tool call index within the message's tool calls
@@ -159,6 +165,9 @@ function encodeToolCallDelta(
     }
     tcIndex++
   }
+  sseLogger.debug('Dropped toolcall_delta for content {contentIndex} with no started tool call', {
+    contentIndex
+  })
   return []
 }
 
@@ -198,9 +207,14 @@ function eventToFrames(
     case 'done':
       state.finishReason = mapFinishReason(event.reason)
       state.finalUsage = event.message.usage
+      sseLogger.debug('Upstream stream done: {stopReason} -> {finishReason}', {
+        stopReason: event.reason,
+        finishReason: state.finishReason
+      })
       return []
     case 'error':
       state.terminated = true
+      logUpstreamStreamError(event)
       return encodeUpstreamError(event.error.errorMessage)
     // Not mapped to SSE output in the stable path.
     case 'text_start':
@@ -212,6 +226,57 @@ function eventToFrames(
       break
   }
   return []
+}
+
+function logUpstreamStreamError(event: Extract<AssistantMessageEvent, { type: 'error' }>): void {
+  // `aborted` is the upstream call cancelled, usually because the client disconnected.
+  if (event.reason === 'aborted') {
+    sseLogger.warn('Upstream stream aborted: {errorMessage}', {
+      stopReason: event.reason,
+      errorMessage: event.error.errorMessage ?? 'Upstream call aborted'
+    })
+    return
+  }
+  sseLogger.error('Upstream error inside stream ({stopReason}): {errorMessage}', {
+    stopReason: event.reason,
+    errorMessage: event.error.errorMessage ?? 'Upstream provider error'
+  })
+}
+
+/**
+ * The frames after the last upstream event: the finish_reason chunk, the usage chunk when
+ * requested, and the terminal sentinel.
+ */
+function closingFrames(
+  meta: ChunkMeta,
+  state: StreamState,
+  includeUsage: boolean,
+  eventCount: number
+): string[] {
+  const frames: string[] = []
+  if (state.finishReason === null) {
+    sseLogger.warn('Upstream stream ended without a done event; sending no finish_reason', {
+      eventCount
+    })
+  } else {
+    frames.push(encodeChoiceChunk(meta, {}, state.finishReason))
+  }
+
+  if (includeUsage && state.finalUsage !== undefined) {
+    frames.push(
+      encodeSSE({
+        id: meta.id,
+        object: 'chat.completion.chunk',
+        created: meta.created,
+        model: meta.model,
+        choices: [],
+        usage: mapUsage(state.finalUsage)
+      })
+    )
+  }
+
+  frames.push(encodeDone())
+  return frames
 }
 
 /**
@@ -232,28 +297,73 @@ export async function* streamToSSE(
     toolCallIndexes: new Map<number, boolean>()
   }
 
-  for await (const event of events) {
-    yield* eventToFrames(event, meta, state)
-    if (state.terminated) return
-  }
+  sseLogger.debug('Starting stream for {model}', { model, includeUsage })
+  const startedAt = performance.now()
+  let eventCount = 0
+  let frameCount = 0
+  let completed = false
+  let failed = false
 
-  // Emit final chunk with finish_reason
-  if (state.finishReason !== null) {
-    yield encodeChoiceChunk(meta, {}, state.finishReason)
-  }
+  try {
+    for await (const event of events) {
+      eventCount++
+      sseLogger.trace('Upstream event {eventType}', { eventType: event.type })
+      const frames = eventToFrames(event, meta, state)
+      frameCount += frames.length
+      yield* frames
+      if (state.terminated) {
+        completed = true
+        return
+      }
+    }
 
-  // Emit usage chunk if requested
-  if (includeUsage && state.finalUsage !== undefined) {
-    yield encodeSSE({
-      id: requestId,
-      object: 'chat.completion.chunk',
-      created: meta.created,
-      model,
-      choices: [],
-      usage: mapUsage(state.finalUsage)
+    const frames = closingFrames(meta, state, includeUsage, eventCount)
+    frameCount += frames.length
+    yield* frames
+    completed = true
+  } catch (error) {
+    failed = true
+    throw error
+  } finally {
+    logStreamEnd(state, {
+      completed,
+      failed,
+      eventCount,
+      frameCount,
+      durationMs: Math.round(performance.now() - startedAt)
     })
   }
+}
 
-  // Terminal sentinel
-  yield encodeDone()
+interface StreamEndSummary {
+  readonly completed: boolean
+  readonly failed: boolean
+  readonly eventCount: number
+  readonly frameCount: number
+  readonly durationMs: number
+}
+
+/** One line for how a stream ended: finished, failed (the caller logs the error), or abandoned. */
+function logStreamEnd(state: StreamState, summary: StreamEndSummary): void {
+  const { completed, failed, ...counts } = summary
+  if (failed) {
+    sseLogger.debug('Stream failed after {eventCount} events and {frameCount} frames', counts)
+    return
+  }
+  if (!completed) {
+    sseLogger.debug('Client closed the stream after {frameCount} frames', counts)
+    return
+  }
+  const usage = state.finalUsage
+  sseLogger.debug('Stream finished: {finishReason}, {frameCount} frames in {durationMs} ms', {
+    ...counts,
+    finishReason: state.finishReason,
+    upstreamError: state.terminated,
+    toolCallCount: state.toolCallIndexes.size,
+    promptTokens: usage === undefined ? null : usage.input + usage.cacheRead + usage.cacheWrite,
+    completionTokens: usage?.output ?? null,
+    totalTokens: usage?.totalTokens ?? null,
+    cacheReadTokens: usage?.cacheRead ?? null,
+    cacheWriteTokens: usage?.cacheWrite ?? null
+  })
 }

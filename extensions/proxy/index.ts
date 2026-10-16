@@ -32,7 +32,7 @@ import {
   loadConfigFromFile,
   saveConfigToFile
 } from '@vx-daniel/pi-openai-proxy/config'
-import { configureFileLogging } from '@vx-daniel/pi-openai-proxy/logging'
+import { configureFileLogging, proxyLogger } from '@vx-daniel/pi-openai-proxy/logging'
 
 import {
   refreshStatus,
@@ -61,6 +61,8 @@ const SUBCOMMANDS = [
   'reset',
   'help'
 ]
+const extensionLogger = proxyLogger('extension')
+
 const USAGE =
   '/proxy [start|stop|restart|status|verify|models|zed-sync|config|show|path|reset|help]'
 
@@ -86,6 +88,9 @@ const SUBCOMMAND_HANDLERS: Record<string, SubcommandHandler> = {
   'reset': (state, context) => {
     state.config = { ...DEFAULT_CONFIG }
     saveConfigToFile(state.config)
+    extensionLogger.info('Proxy settings reset to defaults and saved to {configPath}', {
+      configPath: getConfigPath()
+    })
     context.ui.notify('Proxy settings reset to defaults', 'info')
   },
   'help': (_state, context) => {
@@ -98,6 +103,7 @@ async function openSettingsPanelIfInteractive(
   context: ExtensionCommandContext
 ): Promise<void> {
   if (!context.hasUI) {
+    extensionLogger.warn('Settings panel requested without an interactive UI')
     context.ui.notify('/proxy requires interactive mode. Use /proxy show instead.', 'warning')
     return
   }
@@ -109,7 +115,9 @@ export default function proxyExtension(pi: ExtensionAPI): void {
   // because console output would corrupt pi's terminal UI.
   const logFile = process.env.PI_PROXY_EXTENSION_LOG_FILE
   if (logFile !== undefined && logFile.length > 0) {
-    configureFileLogging(logFile, loadConfigFromFile().logLevel)
+    const level = loadConfigFromFile().logLevel
+    configureFileLogging(logFile, level)
+    extensionLogger.info('Extension file logging enabled at level {level}', { level, logFile })
   }
 
   // This file lives at <package root>/extensions/proxy/index.ts.
@@ -119,13 +127,27 @@ export default function proxyExtension(pi: ExtensionAPI): void {
   // --- Lifecycle ---
 
   pi.on('session_start', async (_event, context) => {
+    extensionLogger.info('Session started; loading config from {configPath}', {
+      configPath: getConfigPath()
+    })
     await useModelRegistry(state, context)
     state.config = loadConfigFromFile()
+    extensionLogger.debug(
+      'Config loaded: lifetime {lifetime}, {host}:{port}, exposure {exposure}',
+      {
+        lifetime: state.config.lifetime,
+        host: state.config.host,
+        port: state.config.port,
+        exposure: state.config.modelExposureMode,
+        logLevel: state.config.logLevel
+      }
+    )
     await maybeAutoSyncZed(state, context)
     await refreshStatus(state, context)
   })
 
   pi.on('session_shutdown', async () => {
+    extensionLogger.info('Session shutting down')
     stopSessionProcess(state)
   })
 
@@ -143,6 +165,9 @@ export default function proxyExtension(pi: ExtensionAPI): void {
     handler: async (args, context) => {
       await useModelRegistry(state, context)
       const sub = args.trim().split(/\s+/)[0] ?? ''
+      extensionLogger.debug('Dispatching /proxy subcommand {subcommand}', {
+        subcommand: sub === '' ? '(panel)' : sub
+      })
 
       if (sub === '' || sub === 'config') {
         await openSettingsPanelIfInteractive(state, context)
@@ -150,6 +175,7 @@ export default function proxyExtension(pi: ExtensionAPI): void {
       }
       const run = Object.hasOwn(SUBCOMMAND_HANDLERS, sub) ? SUBCOMMAND_HANDLERS[sub] : undefined
       if (run === undefined) {
+        extensionLogger.warn('Unknown /proxy subcommand {subcommand}', { subcommand: sub })
         context.ui.notify(USAGE, 'warning')
         return
       }

@@ -53,12 +53,23 @@ import { stream as honoStream } from 'hono/streaming'
  */
 export type ExposureConfigReader = () => ModelExposureConfig | Promise<ModelExposureConfig>
 
+const chatLogger = proxyLogger('server', 'chat')
+const httpLogger = proxyLogger('server', 'http')
+
 async function fileConfigReader(): Promise<ModelExposureConfig> {
   const file = loadConfigFromFile()
+  const enabledModels = await getEnabledModels()
+  chatLogger.debug('Read exposure config: {modelExposureMode}, {publicModelIdMode}', {
+    modelExposureMode: file.modelExposureMode,
+    publicModelIdMode: file.publicModelIdMode,
+    enabledModelCount: enabledModels?.length,
+    customModelCount: file.customModels.length,
+    providerPrefixCount: Object.keys(file.providerPrefixes).length
+  })
   return {
     publicModelIdMode: file.publicModelIdMode,
     modelExposureMode: file.modelExposureMode,
-    enabledModels: await getEnabledModels(),
+    enabledModels,
     customModels: file.customModels,
     providerPrefixes: file.providerPrefixes
   }
@@ -79,12 +90,19 @@ async function getExposure(configReader: ExposureConfigReader): Promise<ModelExp
   const available = getAvailableModels()
   const outcome = computeModelExposure(available, await configReader())
   if (!outcome.ok) {
+    // Thrown to Hono, which answers 500: the exposure config cannot serve any request.
+    chatLogger.error('Model exposure configuration error: {message}', {
+      message: outcome.message,
+      availableModelCount: available.length
+    })
     throw new Error(`Model exposure configuration error: ${outcome.message}`)
   }
+  chatLogger.debug('Exposing {exposedModelCount} of {availableModelCount} available models', {
+    exposedModelCount: outcome.models.length,
+    availableModelCount: available.length
+  })
   return outcome
 }
-
-const chatLogger = proxyLogger('server', 'chat')
 
 /**
  * Map an upstream error and log it: an error line for the failure, plus a warning for rate limiting
@@ -114,6 +132,10 @@ async function parseChatRequest(context: ProxyContext): Promise<Step<ChatRequest
   try {
     body = await context.req.json()
   } catch {
+    // Not the parser's message: newer engines quote a slice of the body in it.
+    chatLogger.warn('Rejected chat request: body is not valid JSON', {
+      contentLength: context.req.header('content-length')
+    })
     return {
       ok: false,
       response: context.json(invalidRequest('Invalid JSON in request body'), HTTP_BAD_REQUEST)
@@ -124,6 +146,11 @@ async function parseChatRequest(context: ProxyContext): Promise<Step<ChatRequest
   if (validation.ok) {
     return { ok: true, value: validation.data }
   }
+  // The field name only: validation messages can echo request values.
+  chatLogger.warn('Rejected chat request: invalid field {param} ({status})', {
+    param: validation.param ?? 'unknown',
+    status: validation.status
+  })
   if (validation.status === HTTP_UNPROCESSABLE_ENTITY) {
     return {
       ok: false,
@@ -150,6 +177,10 @@ function buildPiContext(
 ): Step<PiContext> {
   const conversion = convertMessages(request.messages)
   if (!conversion.ok) {
+    chatLogger.warn('Rejected chat request: message conversion failed at {param}', {
+      param: conversion.param,
+      messageCount: request.messages.length
+    })
     return {
       ok: false,
       response: honoContext.json(
@@ -169,6 +200,7 @@ function buildPiContext(
   // config uses a configurable default. Both are opinionated. A translation
   // proxy should be transparent.
   if (model.api === 'openai-codex-responses' && context.systemPrompt === undefined) {
+    chatLogger.debug('No system prompt for {api}; sending empty instructions', { api: model.api })
     context.systemPrompt = ''
   }
 
@@ -176,6 +208,10 @@ function buildPiContext(
   if (request.tools !== undefined && request.tools.length > 0) {
     const toolConversion = convertTools(request.tools)
     if (!toolConversion.ok) {
+      chatLogger.warn('Rejected chat request: tool conversion failed at {param}', {
+        param: toolConversion.param,
+        toolCount: request.tools.length
+      })
       return {
         ok: false,
         response: honoContext.json(
@@ -187,6 +223,11 @@ function buildPiContext(
     context.tools = toolConversion.tools
   }
 
+  chatLogger.debug('Built pi context: {messageCount} messages, {toolCount} tools', {
+    messageCount: context.messages.length,
+    toolCount: context.tools?.length ?? 0,
+    hasSystemPrompt: context.systemPrompt !== undefined
+  })
   return { ok: true, value: context }
 }
 
@@ -200,9 +241,22 @@ async function checkRequestAuth(
   model: PiModel,
   upstreamApiKey: string | undefined
 ): Promise<Response | undefined> {
-  if (upstreamApiKey !== undefined) return undefined
+  if (upstreamApiKey !== undefined) {
+    chatLogger.debug('Using per-request upstream API key for {provider}', {
+      provider: model.provider
+    })
+    return undefined
+  }
   const requestAuth = await getRequestAuth(model)
-  if (requestAuth.ok) return undefined
+  if (requestAuth.ok) {
+    chatLogger.debug('Resolved upstream auth for {provider} from pi', { provider: model.provider })
+    return undefined
+  }
+  chatLogger.warn('Rejected chat request: no upstream auth for {provider}: {reason}', {
+    provider: model.provider,
+    model: `${model.provider}/${model.id}`,
+    reason: requestAuth.error
+  })
   return context.json(
     authenticationError(
       `Could not resolve request auth for provider '${model.provider}'. ${requestAuth.error}. ` +
@@ -234,8 +288,14 @@ function streamChat(honoContext: ProxyContext, job: CompletionJob): Response {
   honoContext.header('connection', 'keep-alive')
 
   return honoStream(honoContext, async (stream) => {
+    const start = performance.now()
+    let frameCount = 0
     try {
       const eventStream = await piStream(model, context, request, options)
+      chatLogger.debug('Streaming {model} with includeUsage={includeUsage}', {
+        model: canonicalModelId,
+        includeUsage
+      })
 
       for await (const frame of streamToSSE(
         eventStream,
@@ -244,9 +304,19 @@ function streamChat(honoContext: ProxyContext, job: CompletionJob): Response {
         includeUsage
       )) {
         await stream.write(frame)
+        frameCount += 1
       }
+      chatLogger.debug('Stream finished: {frameCount} frames in {durationMs} ms', {
+        frameCount,
+        durationMs: Math.round(performance.now() - start),
+        aborted: stream.aborted
+      })
     } catch (err: unknown) {
       const mapped = handleUpstreamError(err)
+      chatLogger.debug('Ending stream with an error event after {frameCount} frames', {
+        frameCount,
+        durationMs: Math.round(performance.now() - start)
+      })
       // For streams, write an error event and close
       const errorChunk = JSON.stringify({
         error: mapped.body.error
@@ -259,8 +329,14 @@ function streamChat(honoContext: ProxyContext, job: CompletionJob): Response {
 
 async function completeChat(honoContext: ProxyContext, job: CompletionJob): Promise<Response> {
   const { requestId, canonicalModelId, model, context, request, options } = job
+  const start = performance.now()
   try {
     const message = await piComplete(model, context, request, options)
+    chatLogger.debug('Completion for {model} finished: {stopReason} in {durationMs} ms', {
+      model: canonicalModelId,
+      stopReason: message.stopReason,
+      durationMs: Math.round(performance.now() - start)
+    })
 
     // Detect upstream errors reported via stopReason
     if (message.stopReason === 'error' || message.stopReason === 'aborted') {
@@ -292,6 +368,10 @@ async function handleChatCompletion(
   const exposure = await getExposure(configReader)
   const resolved = resolveExposedModel(exposure, request.model)
   if (resolved === undefined) {
+    chatLogger.warn('Rejected chat request: model {requestedModel} is not exposed', {
+      requestedModel: request.model,
+      exposedModelCount: exposure.models.length
+    })
     return context.json(modelNotFound(request.model), HTTP_NOT_FOUND)
   }
 
@@ -326,6 +406,11 @@ async function handleChatCompletion(
     }
   }
 
+  chatLogger.debug('Dispatching {model} as {mode}', {
+    model: canonicalModelId,
+    mode: request.stream === true ? 'stream' : 'complete',
+    upstreamTimeoutMs: config.upstreamTimeoutMs
+  })
   return request.stream === true ? streamChat(context, job) : completeChat(context, job)
 }
 
@@ -354,6 +439,7 @@ export function createRoutes(
   // --- GET /v1/models ---
   routes.get('/v1/models', async (context) => {
     const exposure = await getExposure(configReader)
+    chatLogger.debug('Listing {modelCount} models', { modelCount: exposure.models.length })
     return context.json(buildModelList(exposure.models))
   })
 
@@ -363,11 +449,13 @@ export function createRoutes(
     const rawPath = context.req.path
     // Strip the "/v1/models/" prefix to get the full (possibly multi-segment) model ID
     if (!rawPath.startsWith(MODELS_PREFIX)) {
+      chatLogger.debug('Model detail request without a model ID: {path}', { path: rawPath })
       return context.json(modelNotFound(''), HTTP_NOT_FOUND)
     }
     const modelIdEncoded = rawPath.slice(MODELS_PREFIX.length)
     if (modelIdEncoded.length === 0) {
       // This was handled by the exact /v1/models route
+      chatLogger.debug('Model detail request without a model ID: {path}', { path: rawPath })
       return context.json(modelNotFound(''), HTTP_NOT_FOUND)
     }
     const modelId = decodeURIComponent(modelIdEncoded)
@@ -375,9 +463,17 @@ export function createRoutes(
     const exposure = await getExposure(configReader)
     const resolved = resolveExposedModel(exposure, modelId)
     if (resolved === undefined) {
+      chatLogger.debug('Model detail for {modelId}: not exposed', {
+        modelId,
+        exposedModelCount: exposure.models.length
+      })
       return context.json(modelNotFound(modelId), HTTP_NOT_FOUND)
     }
 
+    chatLogger.debug('Model detail for {modelId} resolved to {model}', {
+      modelId,
+      model: resolved.canonicalId
+    })
     return context.json(toOpenAIModel(resolved))
   })
 
@@ -387,6 +483,10 @@ export function createRoutes(
   // --- Unsupported endpoints: clear errors ---
   for (const path of unsupportedEndpoints) {
     routes.all(path, (context) => {
+      httpLogger.warn('Rejected {method} {path}: endpoint not supported', {
+        method: context.req.method,
+        path: context.req.path
+      })
       return context.json(
         invalidRequest(`Endpoint '${context.req.path}' is not supported by this proxy`, undefined),
         HTTP_NOT_FOUND

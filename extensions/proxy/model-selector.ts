@@ -5,7 +5,12 @@
 
 import { getSettingsListTheme } from '@earendil-works/pi-coding-agent'
 import { type Component, type SettingItem, SettingsList } from '@earendil-works/pi-tui'
-import { loadConfigFromFile, saveConfigToFile } from '@vx-daniel/pi-openai-proxy/config'
+import {
+  getConfigPath,
+  loadConfigFromFile,
+  saveConfigToFile
+} from '@vx-daniel/pi-openai-proxy/config'
+import { proxyLogger } from '@vx-daniel/pi-openai-proxy/logging'
 
 import { getAvailableModels, type ProxyState } from './state'
 
@@ -13,6 +18,8 @@ import { getAvailableModels, type ProxyState } from './state'
 const MODEL_SELECTOR_EXTRA_ROWS = 2
 /** Cap on visible rows in the selector. */
 const MODEL_SELECTOR_MAX_ROWS = 20
+
+const settingsLogger = proxyLogger('extension', 'settings')
 
 type JumpDirection = 'prev' | 'next'
 
@@ -131,6 +138,12 @@ export function buildModelSelectorSubmenu(
       state.config = { ...state.config, customModels: [...selected] }
       saveConfigToFile(state.config)
       state.config = loadConfigFromFile()
+      settingsLogger.info('Custom model {modelId} {action}; {selectedCount} selected', {
+        modelId: id,
+        action: newValue === 'true' ? 'selected' : 'deselected',
+        selectedCount: selected.size,
+        configPath: getConfigPath()
+      })
     },
     () => done(`${String(selected.size)} selected`),
     { enableSearch: true }

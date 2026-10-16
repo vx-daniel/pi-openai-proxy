@@ -19,6 +19,9 @@
 
 import type { Api, Model } from '@earendil-works/pi-ai'
 import type { ModelExposureMode, PublicModelIdMode } from '@proxy/config/schema'
+import { proxyLogger } from '@proxy/logging'
+
+const exposureLogger = proxyLogger('openai', 'exposure')
 
 // ---------------------------------------------------------------------------
 // Types
@@ -86,10 +89,28 @@ function filterExposedModels(
   // When no filter is configured, all available models are exposed.
   const enabled = config.modelExposureMode === 'scoped' ? config.enabledModels : config.customModels
   if (enabled === undefined || enabled.length === 0) {
+    exposureLogger.debug('No {modelExposureMode} model filter configured; exposing every model', {
+      modelExposureMode: config.modelExposureMode
+    })
     return [...available]
   }
   const allowed = new Set(enabled)
-  return available.filter((model) => allowed.has(`${model.provider}/${model.id}`))
+  const filtered = available.filter((model) => allowed.has(`${model.provider}/${model.id}`))
+  if (filtered.length < allowed.size) {
+    exposureLogger.debug(
+      '{unmatchedCount} {modelExposureMode} model IDs match no available model',
+      () => {
+        const availableIds = new Set(available.map((model) => `${model.provider}/${model.id}`))
+        const unmatched = [...allowed].filter((canonicalId) => !availableIds.has(canonicalId))
+        return {
+          modelExposureMode: config.modelExposureMode,
+          unmatchedCount: unmatched.length,
+          unmatched
+        }
+      }
+    )
+  }
+  return filtered
 }
 
 // ---------------------------------------------------------------------------
@@ -199,6 +220,16 @@ function generateCollisionPrefixedIds(
     for (const provider of group) {
       prefixedProviders.add(provider)
     }
+  }
+  if (conflictGroups.length > 0) {
+    exposureLogger.debug(
+      'Model ID collisions in {conflictGroupCount} provider groups; prefixing {prefixedProviders}',
+      () => ({
+        conflictGroupCount: conflictGroups.length,
+        conflictGroups: conflictGroups.map((group) => [...group]),
+        prefixedProviders: [...prefixedProviders]
+      })
+    )
   }
 
   const result = new Map<Model<Api>, string>()
@@ -317,6 +348,10 @@ export function computeModelExposure(
     config.publicModelIdMode
   )
   if (prefixError !== undefined) {
+    exposureLogger.warn('Model exposure configuration error: {message}', {
+      message: prefixError,
+      publicModelIdMode: config.publicModelIdMode
+    })
     return { ok: false, message: prefixError }
   }
 
@@ -331,6 +366,10 @@ export function computeModelExposure(
     case 'universal': {
       const result = generateUniversalIds(exposed)
       if (typeof result === 'string') {
+        exposureLogger.warn('Model exposure configuration error: {message}', {
+          message: result,
+          publicModelIdMode: config.publicModelIdMode
+        })
         return { ok: false, message: result }
       }
       idMap = result
@@ -364,6 +403,17 @@ export function computeModelExposure(
     byCanonicalId.set(canonicalId, entry)
   }
 
+  exposureLogger.debug(
+    'Computed exposure: {exposedCount} of {availableCount} models ({modelExposureMode}, {publicModelIdMode})',
+    {
+      modelExposureMode: config.modelExposureMode,
+      publicModelIdMode: config.publicModelIdMode,
+      availableCount: available.length,
+      exposedCount: models.length,
+      prefixOverrideCount: Object.keys(config.providerPrefixes).length
+    }
+  )
+
   return { ok: true, models, byPublicId, byCanonicalId }
 }
 
@@ -380,8 +430,26 @@ export function resolveExposedModel(
 ): ExposedModel | undefined {
   // 1. Try exact public ID
   const byPublic = exposure.byPublicId.get(requestModelId)
-  if (byPublic !== undefined) return byPublic
+  if (byPublic !== undefined) {
+    exposureLogger.debug('Resolved public model ID {requestedModel} to {canonicalId}', {
+      requestedModel: requestModelId,
+      canonicalId: byPublic.canonicalId
+    })
+    return byPublic
+  }
 
   // 2. Try canonical ID fallback (only for exposed models)
-  return exposure.byCanonicalId.get(requestModelId)
+  const byCanonical = exposure.byCanonicalId.get(requestModelId)
+  if (byCanonical === undefined) {
+    exposureLogger.debug('Model {requestedModel} is not exposed', {
+      requestedModel: requestModelId,
+      exposedCount: exposure.models.length
+    })
+  } else {
+    exposureLogger.debug('Resolved canonical model ID {requestedModel} (public ID {publicId})', {
+      requestedModel: requestModelId,
+      publicId: byCanonical.publicId
+    })
+  }
+  return byCanonical
 }

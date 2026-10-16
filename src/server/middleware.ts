@@ -12,6 +12,7 @@ import type { ProxyEnv } from '@proxy/server/types'
 import type { MiddlewareHandler } from 'hono'
 
 const httpLogger = proxyLogger('server', 'http')
+const authLogger = proxyLogger('server', 'auth')
 
 const BEARER_PREFIX = 'Bearer '
 
@@ -71,20 +72,33 @@ export function proxyAuthMiddleware(config: ServerConfig): MiddlewareHandler<Pro
 
     const authHeader = context.req.header('authorization')
     if (authHeader === undefined) {
+      authLogger.warn('Rejected {method} {path}: missing Authorization header', {
+        method: context.req.method,
+        path: context.req.path
+      })
       return context.json(authenticationError('Missing Authorization header'), HTTP_UNAUTHORIZED)
     }
 
-    const token = authHeader.startsWith(BEARER_PREFIX)
-      ? authHeader.slice(BEARER_PREFIX.length)
-      : undefined
+    const isBearer = authHeader.startsWith(BEARER_PREFIX)
+    const token = isBearer ? authHeader.slice(BEARER_PREFIX.length) : undefined
 
     if (token !== config.proxyAuthToken) {
+      // Never the header or token value: only whether the scheme was right.
+      authLogger.warn('Rejected {method} {path}: invalid proxy auth token', {
+        method: context.req.method,
+        path: context.req.path,
+        bearerScheme: isBearer
+      })
       return context.json(
         authenticationError('Invalid proxy authentication token'),
         HTTP_UNAUTHORIZED
       )
     }
 
+    authLogger.debug('Proxy auth accepted for {method} {path}', {
+      method: context.req.method,
+      path: context.req.path
+    })
     await next()
     return undefined
   }
@@ -138,6 +152,10 @@ export function bodySizeLimitMiddleware(config: ServerConfig): MiddlewareHandler
     if (contentLength !== undefined) {
       const length = Number.parseInt(contentLength, 10)
       if (Number.isFinite(length) && length > config.maxBodySize) {
+        httpLogger.warn(
+          'Rejected {method} {path}: body of {contentLength} bytes exceeds limit of {maxBodySize}',
+          { method, path: context.req.path, contentLength: length, maxBodySize: config.maxBodySize }
+        )
         return context.json(
           invalidRequest(
             `Request body too large. Maximum size: ${String(config.maxBodySize)} bytes`

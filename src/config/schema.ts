@@ -10,8 +10,11 @@ import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileS
 import { dirname, resolve } from 'node:path'
 
 import { isLogLevel, type LogLevel } from '@logtape/logtape'
+import { proxyLogger } from '@proxy/logging'
 import { isRecord } from '@proxy/utils/guards'
 import * as z from 'zod'
+
+const configLogger = proxyLogger('config')
 
 // ---------------------------------------------------------------------------
 // Types
@@ -205,6 +208,9 @@ function parseZedSyncConfig(raw: unknown): ZedSyncConfig {
   if (result.success) {
     return result.data
   }
+  configLogger.warn('Invalid zed settings in config at {fields}; using defaults', {
+    fields: result.error.issues.map((issue) => issue.path.join('.'))
+  })
   return ZedSyncConfigSchema.parse({})
 }
 
@@ -221,14 +227,44 @@ export function getConfigPath(): string {
 // JSON config file I/O
 // ---------------------------------------------------------------------------
 
+/** Node's error code (`ENOENT`, `EACCES`, ...) or the error's name; never its message. */
+function errorCode(error: unknown): string {
+  if (isRecord(error) && typeof error['code'] === 'string') return error['code']
+  return error instanceof Error ? error.name : 'unknown'
+}
+
 export function loadConfigFromFile(): ProxyConfig {
   const configPath = getConfigPath()
-  if (!existsSync(configPath)) return { ...DEFAULT_CONFIG }
-  try {
-    return normalizeConfig(JSON.parse(readFileSync(configPath, 'utf-8')))
-  } catch {
+  if (!existsSync(configPath)) {
+    configLogger.debug('No config file at {path}; using defaults', { path: configPath })
     return { ...DEFAULT_CONFIG }
   }
+  let text: string
+  try {
+    text = readFileSync(configPath, 'utf-8')
+  } catch (error) {
+    configLogger.warn('Could not read config file {path} ({code}); using defaults', {
+      path: configPath,
+      code: errorCode(error)
+    })
+    return { ...DEFAULT_CONFIG }
+  }
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    // Not the parser's message: it quotes the file, which can hold the auth token.
+    configLogger.warn('Config file {path} is not valid JSON; using defaults', {
+      path: configPath,
+      bytes: text.length
+    })
+    return { ...DEFAULT_CONFIG }
+  }
+  configLogger.debug('Read config file {path}', {
+    path: configPath,
+    fields: isRecord(raw) ? Object.keys(raw) : []
+  })
+  return normalizeConfig(raw)
 }
 
 export function saveConfigToFile(config: ProxyConfig): void {
@@ -239,7 +275,12 @@ export function saveConfigToFile(config: ProxyConfig): void {
     mkdirSync(dirname(configPath), { recursive: true })
     writeFileSync(tempPath, `${JSON.stringify(normalized, null, '\t')}\n`, 'utf-8')
     renameSync(tempPath, configPath)
-  } catch {
+    configLogger.debug('Saved config file {path}', { path: configPath })
+  } catch (error) {
+    configLogger.warn('Could not save config file {path} ({code}); changes were not written', {
+      path: configPath,
+      code: errorCode(error)
+    })
     if (existsSync(tempPath)) unlinkSync(tempPath)
   }
 }

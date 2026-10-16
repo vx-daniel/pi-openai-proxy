@@ -6,7 +6,7 @@
  */
 
 import { serve } from '@hono/node-server'
-import { getLogLevels, isLogLevel } from '@logtape/logtape'
+import { getLogLevels, isLogLevel, type LogLevel } from '@logtape/logtape'
 import { type CliOverrides, loadConfig } from '@proxy/config/env'
 import { getConfigPath, loadConfigFromFile } from '@proxy/config/schema'
 import { configureLogging, defaultLogFormat, proxyLogger } from '@proxy/logging'
@@ -19,10 +19,12 @@ const lifecycleLogger = proxyLogger('server')
 const JSON_INDENT = 2
 
 /** Parse a CLI integer argument; returns undefined unless it is a positive finite integer. */
-function parsePositiveIntArg(value: string | undefined): number | undefined {
+function parsePositiveIntArg(name: string, value: string | undefined): number | undefined {
   if (value === undefined) return undefined
   const parsed = Number.parseInt(value, 10)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
+  if (Number.isFinite(parsed) && parsed > 0) return parsed
+  lifecycleLogger.warn('Ignoring --{name}={value}: not a positive integer', { name, value })
+  return undefined
 }
 
 interface CliArgs {
@@ -41,7 +43,7 @@ function buildCliOverrides(args: CliArgs): CliOverrides {
   if (args.host !== undefined) {
     cli.host = args.host
   }
-  const port = parsePositiveIntArg(args.port)
+  const port = parsePositiveIntArg('port', args.port)
   if (port !== undefined) cli.port = port
   if (args['auth-token'] !== undefined) {
     cli.authToken = args['auth-token']
@@ -49,17 +51,12 @@ function buildCliOverrides(args: CliArgs): CliOverrides {
   if (args['remote-images'] !== undefined) {
     cli.remoteImages = args['remote-images']
   }
-  const mb = parsePositiveIntArg(args['max-body-size'])
+  const mb = parsePositiveIntArg('max-body-size', args['max-body-size'])
   if (mb !== undefined) cli.maxBodySizeMb = mb
-  const sec = parsePositiveIntArg(args['upstream-timeout'])
+  const sec = parsePositiveIntArg('upstream-timeout', args['upstream-timeout'])
   if (sec !== undefined) cli.upstreamTimeoutSec = sec
   const logLevel = args['log-level']
-  if (logLevel !== undefined) {
-    if (!isLogLevel(logLevel)) {
-      throw new Error(`--log-level must be one of: ${getLogLevels().join(', ')}`)
-    }
-    cli.logLevel = logLevel
-  }
+  if (logLevel !== undefined && isLogLevel(logLevel)) cli.logLevel = logLevel
   return cli
 }
 
@@ -111,16 +108,49 @@ const main = defineCommand({
       return
     }
 
-    const config = loadConfig(buildCliOverrides(args))
-    configureLogging({ level: config.logLevel, format: defaultLogFormat() })
-
-    // Initialize pi integration
-    const loadError = await initRegistry()
-    if (loadError !== undefined) {
-      lifecycleLogger.warn('models.json failed to load; continuing with built-in models only', {
-        error: loadError
-      })
+    // A level the user typed wrong fails the start, with the valid ones; never a stack trace.
+    const requestedLevel = args['log-level']
+    if (requestedLevel !== undefined && !isLogLevel(requestedLevel)) {
+      process.stderr.write(`--log-level must be one of: ${getLogLevels().join(', ')}\n`)
+      process.exitCode = 1
+      return
     }
+
+    // Config loading logs too, so logging is configured first with the level the CLI or env asks
+    // for, then again with the fully resolved level (which may come from the config file).
+    const format = defaultLogFormat()
+    const earlyLogLevel =
+      [args['log-level'], process.env.PI_PROXY_LOG_LEVEL].find(
+        (candidate): candidate is LogLevel => candidate !== undefined && isLogLevel(candidate)
+      ) ?? 'info'
+    configureLogging({ level: earlyLogLevel, format })
+
+    const config = loadConfig(buildCliOverrides(args))
+    configureLogging({ level: config.logLevel, format })
+
+    // Never the auth token itself: only whether proxy auth is on.
+    lifecycleLogger.debug('Effective config', {
+      configPath: getConfigPath(),
+      host: config.host,
+      port: config.port,
+      proxyAuthEnabled: config.proxyAuthToken !== undefined,
+      agenticEnabled: config.agenticEnabled,
+      remoteImagesEnabled: config.remoteImagesEnabled,
+      maxBodySize: config.maxBodySize,
+      upstreamTimeoutMs: config.upstreamTimeoutMs,
+      publicModelIdMode: config.publicModelIdMode,
+      modelExposureMode: config.modelExposureMode,
+      customModelCount: config.customModels.length,
+      providerPrefixCount: Object.keys(config.providerPrefixes).length,
+      logLevel: config.logLevel,
+      logFormat: format
+    })
+    if (config.proxyAuthToken === undefined) {
+      lifecycleLogger.debug('Proxy auth is disabled: /v1 endpoints accept unauthenticated requests')
+    }
+
+    // Initialize pi integration; initRegistry logs a models.json load failure itself.
+    await initRegistry()
 
     const models = getAvailableModels()
     const app = createApp(config)

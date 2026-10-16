@@ -84,7 +84,13 @@ export function defaultLogFormat(): LogFormat {
 
 function formatterFor(format: LogFormat): TextFormatter {
   if (format === 'json') return jsonLinesFormatter
-  return getPrettyFormatter({ timestamp: 'time', categoryWidth: 24, wordWrap: false })
+  // `bare` prints strings without quotes: a terminal reader wants `GET /v1/models`, not `'GET'`.
+  return getPrettyFormatter({
+    timestamp: 'time',
+    categoryWidth: 32,
+    value: 'bare',
+    wordWrap: false
+  })
 }
 
 function redacted(sink: Sink): Sink {
