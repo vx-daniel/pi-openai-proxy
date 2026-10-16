@@ -28,6 +28,38 @@ export function logRequest(ctx: LogContext): void {
 	console.error(JSON.stringify(entry));
 }
 
+/** What a chat request asked for and what it resolved to. */
+export interface ChatRequestLogDetails {
+	/** The model string the client sent, which may be an alias or a prefixed public id. */
+	readonly requestedModel: string;
+	/** The canonical `provider/id` the exposure engine resolved it to. */
+	readonly model: string;
+	readonly provider: string;
+	readonly stream: boolean;
+}
+
+/**
+ * Log the model a chat request resolved to. The `request` and `response` lines carry no model, so
+ * without this a call cannot be traced to the model that served it. Logs ids only, never message
+ * content or credentials.
+ */
+export function logChatRequest(ctx: LogContext, details: ChatRequestLogDetails): void {
+	const entry = {
+		ts: timestamp(),
+		level: "info",
+		event: "chat_request",
+		requestId: ctx.requestId,
+		clientRequestId: ctx.clientRequestId,
+		method: ctx.method,
+		path: ctx.path,
+		requestedModel: details.requestedModel,
+		model: details.model,
+		provider: details.provider,
+		stream: details.stream,
+	};
+	console.error(JSON.stringify(entry));
+}
+
 export function logResponse(ctx: LogContext, status: number, durationMs: number): void {
 	const entry = {
 		ts: timestamp(),
