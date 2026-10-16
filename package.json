@@ -48,7 +48,7 @@
     "registry": "https://npm.pkg.github.com"
   },
   "scripts": {
-    "dev": "vp pack --watch --on-success \"node dist/index.mjs\"",
+    "dev": "vp pack --watch --on-success \"node dist/index.mjs --port ${PI_PROXY_DEV_PORT:-4142}\"",
     "start": "node dist/index.mjs",
     "check:all": "node scripts/gate.ts",
     "format:check": "vp fmt --check",
