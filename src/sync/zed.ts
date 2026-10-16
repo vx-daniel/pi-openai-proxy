@@ -158,21 +158,53 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Read the current available_models for a provider from Zed settings.
- * Returns the parsed model names, or an empty array if the path does not exist.
+ * Parse Zed settings as Zed does: JSONC, trailing commas allowed. Any other error means Zed cannot
+ * load the file either, and an edit made from a partial parse could land in the wrong place.
+ *
+ * A file with no value at all (empty, blank, or only comments) is not malformed but empty: it
+ * parses as `{}`, and the sync writes the provider block into it as it would into `{}`.
  */
-function readCurrentModelNames(text: string, providerName: string): string[] {
-  const parseErrors: ParseError[] = []
-  // Zed accepts trailing commas; allowing them only silences those errors, the parsed value is the same.
-  const root: unknown = parse(text, parseErrors, { allowTrailingComma: true })
-  if (parseErrors.length > 0) {
-    const [firstError] = parseErrors
-    zedLogger.warn('Zed settings has {parseErrorCount} JSONC parse errors; reading what parsed', {
-      parseErrorCount: parseErrors.length,
-      firstErrorCode: firstError === undefined ? undefined : printParseErrorCode(firstError.error),
-      firstErrorOffset: firstError?.offset
-    })
+function parseSettings(text: string): { root: unknown; errors: ParseError[] } {
+  const errors: ParseError[] = []
+  const root: unknown = parse(text, errors, { allowTrailingComma: true })
+  const noValue =
+    root === undefined &&
+    errors.every((error) => printParseErrorCode(error.error) === 'ValueExpected')
+  return noValue ? { root: {}, errors: [] } : { root, errors }
+}
+
+/** 1-based line and column of `offset` in `text`, for an error a person can find in their editor. */
+function lineAndColumn(text: string, offset: number): { line: number; column: number } {
+  const lines = text.slice(0, offset).split('\n')
+  return { line: lines.length, column: (lines.at(-1)?.length ?? 0) + 1 }
+}
+
+/** Refuse to touch settings that do not parse; the log and the result carry positions only. */
+function refuseMalformed(configPath: string, text: string, errors: ParseError[]): ZedSyncResult {
+  const [firstError] = errors
+  const errorKind = firstError === undefined ? 'unknown' : printParseErrorCode(firstError.error)
+  const { line, column } = lineAndColumn(text, firstError?.offset ?? 0)
+  // Positions and error kinds only: the text around the fault is the user's settings.
+  zedLogger.error(
+    'Zed settings {configPath} has {parseErrorCount} JSONC errors; leaving it untouched',
+    { configPath, parseErrorCount: errors.length, firstErrorCode: errorKind, line, column }
+  )
+  return {
+    ok: false,
+    configPath,
+    added: 0,
+    removed: 0,
+    unchanged: 0,
+    summary: '',
+    error: `Zed settings.json has syntax errors (${errorKind} at line ${String(line)}, column ${String(column)}); fix them in Zed, then sync again`
   }
+}
+
+/**
+ * Read the current available_models for a provider from parsed Zed settings.
+ * Returns the model names, or an empty array if the path does not exist.
+ */
+function readCurrentModelNames(root: unknown, providerName: string): string[] {
   if (!isRecord(root)) {
     zedLogger.debug('Zed settings root is not an object; treating as no existing models')
     return []
@@ -310,7 +342,9 @@ export function syncToZed(
   }
 
   const originalText = readSettingsText(configPath)
-  const currentNames = new Set(readCurrentModelNames(originalText, options.providerName))
+  const { root, errors } = parseSettings(originalText)
+  if (errors.length > 0) return refuseMalformed(configPath, originalText, errors)
+  const currentNames = new Set(readCurrentModelNames(root, options.providerName))
   const zedModels = exposedModels.map(toZedModel)
   const newNames = new Set(zedModels.map((zedModel) => zedModel.name))
 

@@ -467,6 +467,85 @@ describe('syncToZed', () => {
     expect(content).toContain('http://192.168.1.100:8080/v1')
   })
 
+  describe('when the settings file is not valid JSONC', () => {
+    // A missing comma, and a value from the user's own settings that must not reach a log.
+    const MALFORMED = `{
+  // my settings
+  "theme": "One Dark",
+  "language_models": { "openai_compatible": { "Pi Proxy": { "api_url": "http://x", "available_models": [] } } }
+  "assistant": { "api_key": "notarealsecret-zed-user-value" }
+}`
+    let errors: unknown[] = []
+
+    beforeEach(() => {
+      errors = []
+      configureLogging({
+        level: 'info',
+        format: 'json',
+        write: (line) => {
+          const record: unknown = JSON.parse(line)
+          if (isRecord(record) && record['level'] === 'ERROR') errors.push(record)
+        }
+      })
+    })
+
+    afterEach(() => {
+      resetSync()
+    })
+
+    // Catches the sync editing a file it could only partly parse: Zed cannot load it either, and
+    // an edit placed from a partial parse can land anywhere in the user's settings.
+    test.each([false, true])(
+      'leaves the file byte-for-byte untouched and reports why (dry run: %s)',
+      (dryRun) => {
+        writeFileSync(settingsPath, MALFORMED)
+
+        const result = syncToZed([makeExposed()], {
+          providerName: 'Pi Proxy',
+          apiUrl: 'http://127.0.0.1:4141/v1',
+          dryRun
+        })
+
+        expect(readFileSync(settingsPath, 'utf-8')).toBe(MALFORMED)
+        expect(result).toMatchObject({ ok: false, configPath: settingsPath })
+        // The missing comma is reported where "assistant" starts: line 5, column 3.
+        expect(result.error).toContain('syntax errors (CommaExpected at line 5, column 3)')
+        expect(errors).toEqual([
+          expect.objectContaining({
+            properties: expect.objectContaining({
+              configPath: settingsPath,
+              firstErrorCode: 'CommaExpected',
+              line: 5,
+              column: 3
+            }) as unknown
+          })
+        ])
+        expect(JSON.stringify(errors)).not.toContain('notarealsecret')
+      }
+    )
+
+    // Catches the check being stricter than Zed: trailing commas are valid Zed settings, and a
+    // file with no value at all (new, emptied, or only comments) is empty settings, not broken.
+    test.each([
+      ['trailing commas', '{\n  "theme": "One Dark",\n}\n'],
+      ['an empty file', ''],
+      ['a blank file', '  \n\n'],
+      ['only comments', '// Zed settings\n// nothing yet\n']
+    ])('still syncs a file with %s', (_case, text) => {
+      writeFileSync(settingsPath, text)
+
+      const result = syncToZed([makeExposed()], {
+        providerName: 'Pi Proxy',
+        apiUrl: 'http://127.0.0.1:4141/v1',
+        dryRun: false
+      })
+
+      expect(result.ok).toBe(true)
+      expect(readFileSync(settingsPath, 'utf-8')).toContain('"Pi Proxy"')
+      expect(errors).toEqual([])
+    })
+  })
+
   describe('when the settings file cannot be read or written', () => {
     const READ_ONLY = 0o444
     let errors: unknown[] = []

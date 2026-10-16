@@ -222,3 +222,23 @@ describe('normalizeConfig', () => {
     expect(result.zed.autoSync).toBe(true)
   })
 })
+
+describe('normalizeConfig: numeric limits', () => {
+  // Catches a clamp dropped or loosened: a timeout of 1 s would cut off every call that thinks
+  // before answering, and an unbounded one would never abort a stalled call (#15); a body limit of
+  // 0 refuses every request, and an unbounded one accepts any payload into memory. A value that is
+  // not a number falls back to the default rather than to a bound.
+  test.each([
+    ['upstreamTimeoutSec', 1, 5],
+    ['upstreamTimeoutSec', 9999, 600],
+    ['upstreamTimeoutSec', 299.6, 300],
+    ['upstreamTimeoutSec', '300', 120],
+    ['upstreamTimeoutSec', Number.NaN, 120],
+    ['maxBodySizeMb', 0, 1],
+    ['maxBodySizeMb', 100_000, 500],
+    ['maxBodySizeMb', '100', 50],
+    ['maxBodySizeMb', Number.POSITIVE_INFINITY, 50]
+  ] as const)('%s = %s becomes %s', (field, value, expected) => {
+    expect(normalizeConfig({ [field]: value })[field]).toBe(expected)
+  })
+})
