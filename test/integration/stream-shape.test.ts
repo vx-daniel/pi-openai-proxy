@@ -41,6 +41,10 @@ beforeAll(async () => {
     'text': sse([
       ...textChunks('Hel', 'lo'),
       finishChunk('stop', { prompt_tokens: 3, completion_tokens: 2 })
+    ]),
+    'truncated': sse([
+      ...textChunks('Once upon'),
+      finishChunk('length', { prompt_tokens: 3, completion_tokens: 2 })
     ])
   })
   agentDir = await loadFixtureAgentDir({ modelsJson: { providers: { mock: mock.provider() } } })
@@ -52,15 +56,21 @@ afterAll(async () => {
   agentDir.remove()
 })
 
-/** Stream `model` with usage, and return the request ID and the chunks, without `[DONE]`. */
-async function streamed(model: string): Promise<{ requestId: string | null; chunks: unknown[] }> {
+/**
+ * Stream `model`, with `include_usage` unless `includeUsage` is false (then `stream_options` is
+ * omitted, as most clients do), and return the request ID and the chunks, without `[DONE]`.
+ */
+async function streamed(
+  model: string,
+  includeUsage = true
+): Promise<{ requestId: string | null; chunks: unknown[] }> {
   const response = await testApp().request('/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: `mock/${model}`,
       stream: true,
-      stream_options: { include_usage: true },
+      ...(includeUsage ? { stream_options: { include_usage: true } } : {}),
       messages: [{ role: 'user', content: 'Hi' }]
     })
   })
@@ -163,6 +173,33 @@ describe('streamed chat completions', () => {
           prompt_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 }
         }
       })
+    ])
+  })
+
+  // Catches the route ignoring the client's choice: a usage chunk sent to a client that did not
+  // ask for one breaks strict parsers that expect every chunk to have a choice.
+  test('without include_usage the stream ends at the finish chunk', async () => {
+    const { requestId, chunks } = await streamed('text', false)
+    const of = (fields: Record<string, unknown>): unknown => chunk(requestId, 'text', fields)
+
+    expect(chunks).toEqual([
+      of(delta({ role: 'assistant' })),
+      of(delta({ content: 'Hel' })),
+      of(delta({ content: 'lo' })),
+      of(delta({}, 'stop'))
+    ])
+  })
+
+  // Catches a truncated answer reported as `stop`, which hides the truncation from clients that
+  // continue or warn on `length`.
+  test('an answer cut off at the token limit finishes with length', async () => {
+    const { requestId, chunks } = await streamed('truncated', false)
+    const of = (fields: Record<string, unknown>): unknown => chunk(requestId, 'truncated', fields)
+
+    expect(chunks).toEqual([
+      of(delta({ role: 'assistant' })),
+      of(delta({ content: 'Once upon' })),
+      of(delta({}, 'length'))
     ])
   })
 })

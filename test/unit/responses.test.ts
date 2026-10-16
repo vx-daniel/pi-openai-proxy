@@ -136,4 +136,39 @@ describe('buildChatCompletion', () => {
       }
     ])
   })
+
+  // Catches the text a model writes before calling a tool being dropped (content forced to null
+  // whenever tool calls exist), or text blocks split around the call not joined in order.
+  test('text around a tool call stays in content, next to the call', () => {
+    const result = buildChatCompletion(
+      'req-789',
+      'anthropic/claude-haiku-5-5',
+      assistantMessage(
+        [
+          { type: 'text', text: 'Checking the weather. ' },
+          { type: 'toolCall', id: 'tc_1', name: 'get_weather', arguments: { city: 'Oslo' } },
+          { type: 'text', text: 'One moment.' }
+        ],
+        'toolUse'
+      )
+    )
+
+    expect(result.choices).toEqual([
+      {
+        index: 0,
+        message: {
+          role: 'assistant',
+          content: 'Checking the weather. One moment.',
+          tool_calls: [
+            {
+              id: 'tc_1',
+              type: 'function',
+              function: { name: 'get_weather', arguments: '{"city":"Oslo"}' }
+            }
+          ]
+        },
+        finish_reason: 'tool_calls'
+      }
+    ])
+  })
 })
