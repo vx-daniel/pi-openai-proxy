@@ -86,7 +86,10 @@ Outside the OpenAI-compatible surface, not shaped like OpenAI responses (`src/se
   and pi's stack stay out of the response, and the body reaches the log at `debug` only.
 
 The detail endpoints require proxy auth when it is on, because they name providers and models.
-None returns a credential.
+None returns a credential. Without a proxy token, `?verify=true` is open to whoever can reach the
+port, as `/v1/chat/completions` is; it can do less harm than a completion: pi refreshes a token only
+when it is about to expire, and runs the refresh inside its credential store's serialized `modify`,
+so repeated or concurrent calls neither refresh every time nor refresh twice.
 
 ### Unsupported endpoints
 

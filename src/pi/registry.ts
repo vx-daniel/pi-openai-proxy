@@ -147,15 +147,18 @@ export interface ProviderCredentialStatus {
   readonly error?: string
 }
 
-/** Longest verification error returned or logged. */
+/** Longest verification error line logged at debug. */
 const MAX_AUTH_ERROR_LENGTH = 500
+/** Longest summary an HTTP response carries, before the status suffix. */
+const MAX_AUTH_SUMMARY_LENGTH = 200
 
 /**
  * Pi's credential errors run `<summary>. url=…; body=…; details=…; stack=…`: the body and details
  * quote the token endpoint's response, and the stack names files of the install. The HTTP response
- * gets the summary and URL, plus the upstream status when there is one.
+ * gets the summary up to the first of those fields, or the first JSON or array literal for an
+ * error worded some other way, plus the upstream status when there is one.
  */
-const AUTH_ERROR_DETAIL = /; (?:body|details|stack)=/
+const AUTH_ERROR_DETAIL = /[;\s](?:body|details|stack|response)=|[{[\n]/
 const AUTH_ERROR_STATUS = /\bstatus=(\d{3})\b/
 
 function firstLine(message: string): string {
@@ -166,8 +169,12 @@ function firstLine(message: string): string {
 /** A credential error as an HTTP response may carry it: no upstream body, no stack. */
 export function summarizeAuthError(message: string): string {
   const [summary = message] = message.split(AUTH_ERROR_DETAIL)
+  const trimmed = summary
+    .trim()
+    .replace(/[;:,]$/, '')
+    .slice(0, MAX_AUTH_SUMMARY_LENGTH)
   const status = AUTH_ERROR_STATUS.exec(message)?.[1]
-  return firstLine(status === undefined ? summary : `${summary} (HTTP ${status})`)
+  return status === undefined ? trimmed : `${trimmed} (HTTP ${status})`
 }
 
 async function verifyProvider(

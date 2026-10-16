@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { initRegistry } from '@proxy/pi/registry'
+import { createApp } from '@proxy/server/app'
 import { isRecord } from '@proxy/utils/guards'
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vite-plus/test'
 
@@ -65,9 +66,11 @@ describe('health endpoint authentication', () => {
     expect(await jsonBody(live)).toEqual({ status: 'ok' })
 
     const unauthenticated = await Promise.all(
-      ['/healthz/models', '/healthz/creds'].map(async (path) => (await app.request(path)).status)
+      ['/healthz/models', '/healthz/creds', '/healthz/creds?verify=true', '/healthz/x/y'].map(
+        async (path) => (await app.request(path)).status
+      )
     )
-    expect(unauthenticated).toEqual([401, 401])
+    expect(unauthenticated).toEqual([401, 401, 401, 401])
 
     const authenticated = await Promise.all(
       ['/healthz/models', '/healthz/creds'].map(
@@ -107,6 +110,20 @@ describe('/healthz/models', () => {
       availableModelCount: 1,
       exposedModelCount: 0
     })
+  })
+
+  // Catches a broken config file turning the check into an unexplained 500, or its message (which
+  // can quote the file) reaching the response.
+  test('answers 503 without the error text when reading the config throws', async () => {
+    const app = createApp(testConfig(), () => {
+      throw new Error('proxy-config.json: unexpected token at notarealsecret-config-text')
+    })
+    const response = await app.request('/healthz/models')
+    const text = await response.text()
+
+    expect(response.status).toBe(503)
+    expect(text).not.toContain('notarealsecret-config-text')
+    expect(JSON.parse(text)).toMatchObject({ status: 'unavailable' })
   })
 })
 

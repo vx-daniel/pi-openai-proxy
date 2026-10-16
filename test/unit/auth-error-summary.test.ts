@@ -28,4 +28,19 @@ describe('summarizeAuthError', () => {
       'no credentials for provider x'
     )
   })
+
+  // Catches an error worded another way (another pi version, another provider) quoting a response
+  // body with no `body=` marker in front of it.
+  test('cuts an unmarked JSON body', () => {
+    expect(
+      summarizeAuthError('Token request failed: {"error":"invalid_grant","hint":"abc123"}')
+    ).toBe('Token request failed')
+  })
+
+  // Catches a long summary pushing the status off the end of the truncated text.
+  test('keeps the status when the summary is truncated', () => {
+    const summary = summarizeAuthError(`${'x'.repeat(1000)}; details=status=401`)
+    expect(summary.endsWith('(HTTP 401)')).toBe(true)
+    expect(summary.length).toBeLessThan(250)
+  })
 })
