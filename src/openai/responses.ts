@@ -15,6 +15,8 @@ import type {
 	Usage,
 } from "@earendil-works/pi-ai";
 
+const MS_PER_SECOND = 1000;
+
 export interface OpenAIUsage {
 	readonly prompt_tokens: number;
 	readonly completion_tokens: number;
@@ -139,7 +141,7 @@ export function buildChatCompletion(
 	return {
 		id: requestId,
 		object: "chat.completion",
-		created: Math.floor(Date.now() / 1000),
+		created: Math.floor(Date.now() / MS_PER_SECOND),
 		model: canonicalModelId,
 		system_fingerprint: null,
 		choices: [

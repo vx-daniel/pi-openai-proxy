@@ -9,7 +9,7 @@
  */
 
 import type { ModelExposureMode, PublicModelIdMode } from "@proxy/config/schema";
-import { loadConfigFromFile } from "@proxy/config/schema";
+import { BYTES_PER_MB, loadConfigFromFile, MS_PER_SECOND } from "@proxy/config/schema";
 
 export interface ServerConfig {
 	/** Host to bind to. */
@@ -65,21 +65,23 @@ export function loadConfig(cli: CliOverrides = {}): ServerConfig {
 	const fileToken = file.authToken.length > 0 ? file.authToken : undefined;
 	const proxyAuthToken = cli.authToken ?? process.env.PI_PROXY_AUTH_TOKEN ?? fileToken;
 
+	const envRemoteImages = process.env.PI_PROXY_REMOTE_IMAGES;
 	const remoteImagesEnabled =
 		cli.remoteImages ??
-		(process.env.PI_PROXY_REMOTE_IMAGES !== undefined
-			? process.env.PI_PROXY_REMOTE_IMAGES === "true"
-			: file.remoteImages);
+		(envRemoteImages === undefined ? file.remoteImages : envRemoteImages === "true");
 
 	const maxBodySize =
-		cli.maxBodySizeMb !== undefined
-			? cli.maxBodySizeMb * 1024 * 1024
-			: parsePositiveInt(process.env.PI_PROXY_MAX_BODY_SIZE, file.maxBodySizeMb * 1024 * 1024);
+		cli.maxBodySizeMb === undefined
+			? parsePositiveInt(process.env.PI_PROXY_MAX_BODY_SIZE, file.maxBodySizeMb * BYTES_PER_MB)
+			: cli.maxBodySizeMb * BYTES_PER_MB;
 
 	const upstreamTimeoutMs =
-		cli.upstreamTimeoutSec !== undefined
-			? cli.upstreamTimeoutSec * 1000
-			: parsePositiveInt(process.env.PI_PROXY_UPSTREAM_TIMEOUT_MS, file.upstreamTimeoutSec * 1000);
+		cli.upstreamTimeoutSec === undefined
+			? parsePositiveInt(
+					process.env.PI_PROXY_UPSTREAM_TIMEOUT_MS,
+					file.upstreamTimeoutSec * MS_PER_SECOND,
+				)
+			: cli.upstreamTimeoutSec * MS_PER_SECOND;
 
 	const agenticEnabled = process.env.PI_PROXY_AGENTIC === "true";
 

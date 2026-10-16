@@ -74,34 +74,23 @@ function filterExposedModels(
 	available: readonly Model<Api>[],
 	config: ModelExposureConfig,
 ): Model<Api>[] {
-	switch (config.modelExposureMode) {
-		case "all":
-			// Expose all auth-configured models — same as pi's getAvailable().
-			return [...available];
-
-		case "scoped": {
-			// Delegates to pi's global `enabledModels` setting — the canonical IDs
-			// persisted by `/scoped-models` (Ctrl+S) in pi's interactive mode.
-			// When no filter is configured, all available models are exposed.
-			const enabled = config.enabledModels;
-			if (enabled === undefined || enabled.length === 0) {
-				return [...available];
-			}
-			const allowed = new Set(enabled);
-			return available.filter((m) => allowed.has(`${m.provider}/${m.id}`));
-		}
-
-		case "custom": {
-			// Same per-model canonical ID filtering as "scoped", but from the
-			// proxy's own `customModels` config instead of pi's settings.
-			// When empty, all available models are exposed.
-			if (config.customModels.length === 0) {
-				return [...available];
-			}
-			const allowed = new Set(config.customModels);
-			return available.filter((m) => allowed.has(`${m.provider}/${m.id}`));
-		}
+	// "all": expose all auth-configured models — same as pi's getAvailable().
+	if (config.modelExposureMode === "all") {
+		return [...available];
 	}
+
+	// "scoped" delegates to pi's global `enabledModels` setting — the canonical IDs
+	// persisted by `/scoped-models` (Ctrl+S) in pi's interactive mode.
+	// "custom" uses the same per-model canonical ID filtering, but from the
+	// proxy's own `customModels` config instead of pi's settings.
+	// When no filter is configured, all available models are exposed.
+	const enabled =
+		config.modelExposureMode === "scoped" ? config.enabledModels : config.customModels;
+	if (enabled === undefined || enabled.length === 0) {
+		return [...available];
+	}
+	const allowed = new Set(enabled);
+	return available.filter((m) => allowed.has(`${m.provider}/${m.id}`));
 }
 
 // ---------------------------------------------------------------------------
@@ -128,10 +117,10 @@ function findConflictGroups(models: readonly Model<Api>[]): Set<string>[] {
 	const modelToProviders = new Map<string, Set<string>>();
 	for (const m of models) {
 		const existing = modelToProviders.get(m.id);
-		if (existing !== undefined) {
-			existing.add(m.provider);
-		} else {
+		if (existing === undefined) {
 			modelToProviders.set(m.id, new Set([m.provider]));
+		} else {
+			existing.add(m.provider);
 		}
 	}
 
@@ -190,10 +179,10 @@ function findConflictGroups(models: readonly Model<Api>[]): Set<string>[] {
 	for (const provider of parent.keys()) {
 		const root = find(provider);
 		const existing = groupsByRoot.get(root);
-		if (existing !== undefined) {
-			existing.add(provider);
-		} else {
+		if (existing === undefined) {
 			groupsByRoot.set(root, new Set([provider]));
+		} else {
+			existing.add(provider);
 		}
 	}
 

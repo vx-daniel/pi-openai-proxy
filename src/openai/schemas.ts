@@ -157,6 +157,11 @@ const responseFormatSchema = z.discriminatedUnion("type", [
 
 export type ResponseFormat = z.infer<typeof responseFormatSchema>;
 
+const MAX_TEMPERATURE = 2;
+const MAX_STOP_SEQUENCES = 4;
+const MIN_PENALTY = -2;
+const MAX_PENALTY = 2;
+
 // --- Top-level request ---
 
 export const chatCompletionRequestSchema = z
@@ -164,10 +169,12 @@ export const chatCompletionRequestSchema = z
 		model: z.string().trim(),
 		messages: z.array(messageSchema).min(1),
 		stream: z.boolean().optional(),
-		temperature: z.number().min(0).max(2).optional(),
+		temperature: z.number().min(0).max(MAX_TEMPERATURE).optional(),
 		max_tokens: z.int().positive().optional(),
 		max_completion_tokens: z.int().positive().optional(),
-		stop: z.union([z.string().trim(), z.array(z.string().trim()).max(4)]).optional(),
+		stop: z
+			.union([z.string().trim(), z.array(z.string().trim()).max(MAX_STOP_SEQUENCES)])
+			.optional(),
 		user: z.string().trim().optional(),
 		stream_options: streamOptionsSchema.nullable().optional(),
 		// Phase 2 additions
@@ -176,8 +183,8 @@ export const chatCompletionRequestSchema = z
 		parallel_tool_calls: z.boolean().optional(),
 		reasoning_effort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]).optional(),
 		top_p: z.number().min(0).max(1).optional(),
-		frequency_penalty: z.number().min(-2).max(2).optional(),
-		presence_penalty: z.number().min(-2).max(2).optional(),
+		frequency_penalty: z.number().min(MIN_PENALTY).max(MAX_PENALTY).optional(),
+		presence_penalty: z.number().min(MIN_PENALTY).max(MAX_PENALTY).optional(),
 		seed: z.int().optional(),
 		response_format: responseFormatSchema.optional(),
 		// Phase 3D additions — passthrough fields sent by real clients

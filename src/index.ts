@@ -13,6 +13,45 @@ import { getAvailableModels, initRegistry } from "@proxy/pi/registry";
 import { createApp } from "@proxy/server/app";
 import { logShutdown, logStartup } from "@proxy/server/logging";
 
+const JSON_INDENT = 2;
+
+/** Parse a CLI integer argument; returns undefined unless it is a positive finite integer. */
+function parsePositiveIntArg(value: string | undefined): number | undefined {
+	if (value === undefined) return undefined;
+	const n = Number.parseInt(value, 10);
+	return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+interface CliArgs {
+	host?: string | undefined;
+	port?: string | undefined;
+	"auth-token"?: string | undefined;
+	"remote-images"?: boolean | undefined;
+	"max-body-size"?: string | undefined;
+	"upstream-timeout"?: string | undefined;
+}
+
+/** Build CLI overrides from parsed args. */
+function buildCliOverrides(args: CliArgs): CliOverrides {
+	const cli: CliOverrides = {};
+	if (args.host !== undefined) {
+		cli.host = args.host;
+	}
+	const port = parsePositiveIntArg(args.port);
+	if (port !== undefined) cli.port = port;
+	if (args["auth-token"] !== undefined) {
+		cli.authToken = args["auth-token"];
+	}
+	if (args["remote-images"] !== undefined) {
+		cli.remoteImages = args["remote-images"];
+	}
+	const mb = parsePositiveIntArg(args["max-body-size"]);
+	if (mb !== undefined) cli.maxBodySizeMb = mb;
+	const sec = parsePositiveIntArg(args["upstream-timeout"]);
+	if (sec !== undefined) cli.upstreamTimeoutSec = sec;
+	return cli;
+}
+
 const main = defineCommand({
 	meta: {
 		name: "pi-proxy",
@@ -53,35 +92,11 @@ const main = defineCommand({
 		if (args.config === true) {
 			const file = loadConfigFromFile();
 			console.error(`Config file: ${getConfigPath()}`);
-			console.error(JSON.stringify(file, null, 2));
+			console.error(JSON.stringify(file, null, JSON_INDENT));
 			return;
 		}
 
-		// Build CLI overrides from parsed args
-		const cli: CliOverrides = {};
-		if (args.host !== undefined) {
-			cli.host = args.host;
-		}
-		if (args.port !== undefined) {
-			const p = Number.parseInt(args.port, 10);
-			if (Number.isFinite(p) && p > 0) cli.port = p;
-		}
-		if (args["auth-token"] !== undefined) {
-			cli.authToken = args["auth-token"];
-		}
-		if (args["remote-images"] !== undefined) {
-			cli.remoteImages = args["remote-images"];
-		}
-		if (args["max-body-size"] !== undefined) {
-			const mb = Number.parseInt(args["max-body-size"], 10);
-			if (Number.isFinite(mb) && mb > 0) cli.maxBodySizeMb = mb;
-		}
-		if (args["upstream-timeout"] !== undefined) {
-			const sec = Number.parseInt(args["upstream-timeout"], 10);
-			if (Number.isFinite(sec) && sec > 0) cli.upstreamTimeoutSec = sec;
-		}
-
-		const config = loadConfig(cli);
+		const config = loadConfig(buildCliOverrides(args));
 
 		// Initialize pi integration
 		const loadError = await initRegistry();

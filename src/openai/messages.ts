@@ -50,17 +50,7 @@ export function convertMessages(messages: OpenAIMessage[]): ConversionResult {
 	const systemParts: string[] = [];
 	const piMessages: Message[] = [];
 
-	// Build a map of tool_call_id -> function name from assistant messages.
-	// The OpenAI tool message only has tool_call_id + content, but some providers
-	// (Google) require the function name on tool result messages.
-	const toolCallNames = new Map<string, string>();
-	for (const msg of messages) {
-		if (msg.role === "assistant" && "tool_calls" in msg) {
-			for (const tc of msg.tool_calls ?? []) {
-				toolCallNames.set(tc.id, tc.function.name);
-			}
-		}
-	}
+	const toolCallNames = collectToolCallNames(messages);
 
 	for (let i = 0; i < messages.length; i++) {
 		const msg = messages[i];
@@ -93,6 +83,23 @@ export function convertMessages(messages: OpenAIMessage[]): ConversionResult {
 	}
 
 	return { ok: true, context };
+}
+
+/**
+ * Build a map of tool_call_id -> function name from assistant messages.
+ * The OpenAI tool message only has tool_call_id + content, but some providers
+ * (Google) require the function name on tool result messages.
+ */
+function collectToolCallNames(messages: OpenAIMessage[]): Map<string, string> {
+	const toolCallNames = new Map<string, string>();
+	for (const msg of messages) {
+		if (msg.role === "assistant" && "tool_calls" in msg) {
+			for (const tc of msg.tool_calls ?? []) {
+				toolCallNames.set(tc.id, tc.function.name);
+			}
+		}
+	}
+	return toolCallNames;
 }
 
 // --- Internal converters ---
@@ -243,10 +250,13 @@ function convertToolMessage(
  */
 const SUPPORTED_IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
+const BYTES_PER_KILOBYTE = 1024;
+const BYTES_PER_MEGABYTE = BYTES_PER_KILOBYTE * BYTES_PER_KILOBYTE;
+const MAX_BASE64_PAYLOAD_MEGABYTES = 20;
 /**
  * Maximum base64 payload size (20 MB of base64 text, ~15 MB decoded).
  */
-const MAX_BASE64_PAYLOAD_SIZE = 20 * 1024 * 1024;
+const MAX_BASE64_PAYLOAD_SIZE = MAX_BASE64_PAYLOAD_MEGABYTES * BYTES_PER_MEGABYTE;
 
 export interface ParsedDataUri {
 	readonly data: string;
