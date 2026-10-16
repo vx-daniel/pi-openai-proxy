@@ -145,4 +145,38 @@ describe('/healthz/creds', () => {
       await loadAgentDir(MOCK_PROVIDER)
     }
   })
+
+  // Catches a credential that cannot resolve passing verification, or a verification failure
+  // failing the whole endpoint instead of being reported against its provider.
+  test('answers 503 and names the provider whose credential fails to verify', async () => {
+    await loadAgentDir({
+      providers: {
+        ...MOCK_PROVIDER.providers,
+        'health-broken': {
+          baseUrl: 'http://127.0.0.1:9/v1',
+          api: 'openai-completions',
+          apiKey: '!exit 3',
+          models: [{ id: 'broken-model' }]
+        }
+      }
+    })
+    try {
+      const response = await testApp().request('/healthz/creds?verify=true')
+      const body = await jsonBody(response)
+
+      expect(response.status).toBe(503)
+      const providers = isRecord(body) ? body['providers'] : undefined
+      expect(providers).toEqual([
+        expect.objectContaining({ provider: 'health-mock', verified: true }),
+        expect.objectContaining({
+          provider: 'health-broken',
+          source: 'models_json_command',
+          verified: false,
+          error: expect.stringContaining('health-broken')
+        })
+      ])
+    } finally {
+      await loadAgentDir(MOCK_PROVIDER)
+    }
+  })
 })

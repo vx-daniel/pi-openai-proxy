@@ -81,8 +81,9 @@ Outside the OpenAI-compatible surface, not shaped like OpenAI responses (`src/se
   error; `503` when nothing is exposed.
 - `GET /healthz/creds`: per provider with a credential, its type, source and available model
   count; local state only unless `?verify=true` resolves each credential (may refresh OAuth);
-  `503` when no provider has one or a verification fails. Verification errors are cut to their
-  first line before the stack.
+  `503` when no provider has one or a verification fails. A verification error carries pi's
+  summary, the token URL and the upstream status only (`summarizeAuthError`); the upstream body
+  and pi's stack stay out of the response, and the body reaches the log at `debug` only.
 
 The detail endpoints require proxy auth when it is on, because they name providers and models.
 None returns a credential.

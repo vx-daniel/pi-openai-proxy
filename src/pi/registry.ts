@@ -147,18 +147,27 @@ export interface ProviderCredentialStatus {
   readonly error?: string
 }
 
-/** Longest verification error returned, after the stack is cut. */
+/** Longest verification error returned or logged. */
 const MAX_AUTH_ERROR_LENGTH = 500
 
 /**
- * Pi's refresh errors append `; stack=…` with file paths of the install, which an HTTP response
- * should not carry. Keep the summary: the provider, the token URL, the upstream status and body.
+ * Pi's credential errors run `<summary>. url=…; body=…; details=…; stack=…`: the body and details
+ * quote the token endpoint's response, and the stack names files of the install. The HTTP response
+ * gets the summary and URL, plus the upstream status when there is one.
  */
-function summarizeAuthError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error)
-  const [summary = message] = message.split('; stack=')
-  const [firstLine = summary] = summary.split('\n')
-  return firstLine.slice(0, MAX_AUTH_ERROR_LENGTH)
+const AUTH_ERROR_DETAIL = /; (?:body|details|stack)=/
+const AUTH_ERROR_STATUS = /\bstatus=(\d{3})\b/
+
+function firstLine(message: string): string {
+  const [line = message] = message.split('\n')
+  return line.slice(0, MAX_AUTH_ERROR_LENGTH)
+}
+
+/** A credential error as an HTTP response may carry it: no upstream body, no stack. */
+export function summarizeAuthError(message: string): string {
+  const [summary = message] = message.split(AUTH_ERROR_DETAIL)
+  const status = AUTH_ERROR_STATUS.exec(message)?.[1]
+  return firstLine(status === undefined ? summary : `${summary} (HTTP ${status})`)
 }
 
 async function verifyProvider(
@@ -170,14 +179,15 @@ async function verifyProvider(
       ? { verified: false, error: 'no credentials configured' }
       : { verified: true }
   } catch (error) {
-    const summary = summarizeAuthError(error)
+    const message = error instanceof Error ? error.message : String(error)
     registryLogger.warn('Credential verification failed for {provider}', { provider })
-    // The summary quotes the token endpoint's response: debug only, like other upstream error text.
+    // The full first line quotes the token endpoint's response: debug only, like other upstream
+    // error text. The stack after it stays out of the log as well.
     registryLogger.debug('Credential verification error for {provider}: {error}', {
       provider,
-      error: summary
+      error: firstLine(message.split('; stack=')[0] ?? message)
     })
-    return { verified: false, error: summary }
+    return { verified: false, error: summarizeAuthError(message) }
   }
 }
 

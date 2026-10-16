@@ -108,9 +108,12 @@ Operational endpoints, outside the OpenAI-compatible `/v1` surface:
 |---|---|---|
 | `GET /healthz` | Never | `200 {"status":"ok"}` once the proxy listens and pi's model runtime is loaded. No upstream calls: use it for container healthchecks and liveness probes. |
 | `GET /healthz/models` | Proxy token, if set | Available and exposed model counts, exposure modes, a `models.json` load error. `503` when no model is exposed or the exposure config is invalid. |
-| `GET /healthz/creds` | Proxy token, if set | Per provider with a credential: `type` (`oauth` or `api_key`), `source` (`stored`, `environment`, `models_json_key`, …) and `availableModelCount`. `503` when no provider has one. Reads local state only; `?verify=true` also has pi resolve each credential now (which may refresh an OAuth token over the network) and adds `verified` and `error` per provider, `503` if any fails. |
+| `GET /healthz/creds` | Proxy token, if set | Per provider with a credential: `type` (`oauth` or `api_key`), `source` (`stored`, `environment`, `models_json_key`, …) and `availableModelCount`. `503` when no provider has one. Reads local state only; `?verify=true` also has pi resolve each credential now and adds `verified` and `error` per provider, `503` if any fails. |
 
 None of them returns a credential. `/healthz` proves the process is up, not that a provider will accept a request: `GET /healthz/creds?verify=true` is the closest check to that without spending a completion.
+
+- **`verify=true` costs what a real request's credential lookup costs.** pi refreshes an OAuth token only when it is about to expire and caches the output of a `models.json` key command, so polling it mostly stays local; the network call it can make is the refresh the next real request would have made. A failed verification reports pi's summary, the token URL and the upstream HTTP status; the upstream response body goes to the `debug` log only.
+- **Without `PI_PROXY_AUTH_TOKEN`, the detail endpoints are open**, like `/v1/*`. Bound to `127.0.0.1` (the default) that is local only; on `0.0.0.0` set a token, or anyone who can reach the port sees your provider names and model counts.
 
 ```bash
 curl -fsS http://localhost:4141/healthz
