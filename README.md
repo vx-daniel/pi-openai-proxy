@@ -100,6 +100,26 @@ curl http://localhost:4141/v1/chat/completions \
 | `GET /v1/models/{model}` | Model details by public ID or canonical ID (supports URL-encoded IDs with `/`) |
 | `POST /v1/chat/completions` | Chat completions (streaming and non-streaming) |
 
+### Health checks
+
+Operational endpoints, outside the OpenAI-compatible `/v1` surface:
+
+| Endpoint | Auth | Answers |
+|---|---|---|
+| `GET /healthz` | Never | `200 {"status":"ok"}` once the proxy listens and pi's model runtime is loaded. No upstream calls: use it for container healthchecks and liveness probes. |
+| `GET /healthz/models` | Proxy token, if set | Available and exposed model counts, exposure modes, a `models.json` load error. `503` when no model is exposed or the exposure config is invalid. |
+| `GET /healthz/creds` | Proxy token, if set | Per provider with a credential: `type` (`oauth` or `api_key`), `source` (`stored`, `environment`, `models_json_key`, …) and `availableModelCount`. `503` when no provider has one. Reads local state only; `?verify=true` also has pi resolve each credential now and adds `verified` and `error` per provider, `503` if any fails. |
+
+None of them returns a credential. `/healthz` proves the process is up, not that a provider will accept a request: `GET /healthz/creds?verify=true` is the closest check to that without spending a completion.
+
+- **`verify=true` costs what a real request's credential lookup costs.** pi refreshes an OAuth token only when it is about to expire and caches the output of a `models.json` key command, so polling it mostly stays local; the network call it can make is the refresh the next real request would have made. A failed verification reports pi's summary, the token URL and the upstream HTTP status; the upstream response body goes to the `debug` log only.
+- **Without `PI_PROXY_AUTH_TOKEN`, the detail endpoints are open**, like `/v1/*`. Bound to `127.0.0.1` (the default) that is local only; on `0.0.0.0` set a token, or anyone who can reach the port sees your provider names and model counts.
+
+```bash
+curl -fsS http://localhost:4141/healthz
+curl -fsS http://localhost:4141/healthz/creds?verify=true -H "Authorization: Bearer $PI_PROXY_AUTH_TOKEN"
+```
+
 ## Supported Chat Completions Features
 
 | Feature | Notes |
@@ -203,14 +223,19 @@ Proxy-specific settings are configured via environment variables or the `/proxy 
 | Max body size | `PI_PROXY_MAX_BODY_SIZE` | `52428800` (50 MB) | Maximum request body size in bytes |
 | Upstream timeout | `PI_PROXY_UPSTREAM_TIMEOUT_MS` | `120000` (120s) | Upstream request timeout in milliseconds |
 | Log level | `PI_PROXY_LOG_LEVEL` | `info` | Lowest level logged: `trace`, `debug`, `info`, `warning`, `error`, `fatal` (also `--log-level`, and `logLevel` in the config file) |
+| Log format | `PI_PROXY_LOG_FORMAT` | pretty on a terminal, `json` otherwise | `pretty` or `json` (also `--log-format`) |
 
 ### Logging
 
 The proxy logs with [LogTape](https://logtape.org) to stderr:
-- **On a terminal:** readable, colored lines.
-- **When piped or redirected:** [JSON Lines](https://jsonlines.org), one object per record with `@timestamp`, `level`, `logger` (the category, e.g. `pi-openai-proxy.server.http`), `message` and `properties`.
+- **Pretty** ([@logtape/pretty](https://jsr.io/@logtape/pretty)): readable, colored lines stamped with the local date, time and UTC offset (in a container, set `TZ`, e.g. `TZ=America/Chicago`). The default on a terminal.
+- **JSON** ([JSON Lines](https://jsonlines.org)): one object per record with `@timestamp` (UTC), `level`, `logger` (the category, e.g. `pi-openai-proxy.server.http`), `message` and `properties`. The default when stderr is piped or redirected, as in `docker logs`.
 
-An invalid `--log-level` stops the proxy from starting and lists the valid levels. An invalid `PI_PROXY_LOG_LEVEL` is ignored with a warning, and an invalid `logLevel` in the config file falls back to `info`, so a bad value in either never keeps a background proxy from starting.
+`PI_PROXY_LOG_FORMAT` (or `--log-format`) picks one regardless of the terminal, for example `pretty` for reading `docker compose logs` directly.
+
+Passing `/healthz` checks are logged at `debug`; a failed one stays at `info`.
+
+An invalid `--log-level` or `--log-format` stops the proxy from starting and lists the valid values. An invalid `PI_PROXY_LOG_LEVEL` or `PI_PROXY_LOG_FORMAT` is ignored with a warning, and an invalid `logLevel` in the config file falls back to `info`, so a bad value in either never keeps a background proxy from starting.
 
 If proxy auth is off and the proxy binds to anything other than a loopback address, it logs a warning at startup: any client that can reach the port can use your provider credentials.
 
@@ -255,7 +280,7 @@ curl http://localhost:4141/v1/chat/completions \
 
 ### Proxy authentication
 
-Set `PI_PROXY_AUTH_TOKEN` to require a bearer token for all requests:
+Set `PI_PROXY_AUTH_TOKEN` to require a bearer token for every request except the `GET /healthz` liveness check:
 
 ```bash
 PI_PROXY_AUTH_TOKEN=my-secret-token pi-openai-proxy

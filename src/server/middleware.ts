@@ -6,7 +6,11 @@ import { withContext } from '@logtape/logtape'
 import type { ServerConfig } from '@proxy/config/env'
 import { proxyLogger } from '@proxy/logging'
 import { authenticationError, invalidRequest } from '@proxy/server/errors'
-import { HTTP_PAYLOAD_TOO_LARGE, HTTP_UNAUTHORIZED } from '@proxy/server/http-status'
+import {
+  HTTP_MULTIPLE_CHOICES,
+  HTTP_PAYLOAD_TOO_LARGE,
+  HTTP_UNAUTHORIZED
+} from '@proxy/server/http-status'
 import { generateRequestId } from '@proxy/server/request-id'
 import type { ProxyEnv } from '@proxy/server/types'
 import type { MiddlewareHandler } from 'hono'
@@ -15,6 +19,7 @@ const httpLogger = proxyLogger('server', 'http')
 const authLogger = proxyLogger('server', 'auth')
 
 const BEARER_PREFIX = 'Bearer '
+const HEALTH_PATH = '/healthz'
 
 /**
  * Inject the request ID and upstream API key into every request, and log the request and its
@@ -39,22 +44,32 @@ export function requestIdMiddleware(): MiddlewareHandler<ProxyEnv> {
     }
 
     const { method, path } = context.req
+    // Health endpoints are what container healthchecks and monitors poll, often every few seconds:
+    // their lines go to debug, except an answer that is not 2xx, which stays at info. At info, a
+    // failed check therefore shows only its "answered" line: the request line was decided before the
+    // status was known, and the answer line carries the same method, path and request id.
+    const polling = path === HEALTH_PATH || path.startsWith(`${HEALTH_PATH}/`)
     await withContext({ requestId, clientRequestId }, async () => {
-      httpLogger.info('{method} {path} received ({requestId})', {
+      const received = {
         method,
         path,
         requestId,
         hasUpstreamApiKey: upstreamApiKey !== undefined
-      })
+      }
+      if (polling) httpLogger.debug('{method} {path} received ({requestId})', received)
+      else httpLogger.info('{method} {path} received ({requestId})', received)
       await next()
       const status = context.res.status
-      httpLogger.info('{method} {path} answered {status} in {durationMs} ms ({requestId})', {
+      const answered = {
         method,
         path,
         status,
         durationMs: Math.round(performance.now() - start),
         requestId
-      })
+      }
+      const message = '{method} {path} answered {status} in {durationMs} ms ({requestId})'
+      if (polling && status < HTTP_MULTIPLE_CHOICES) httpLogger.debug(message, answered)
+      else httpLogger.info(message, answered)
     })
   }
 }

@@ -34,6 +34,7 @@ Treat these as stable unless the user explicitly changes direction:
   - `GET /v1/models`
   - `GET /v1/models/{model}`
   - `POST /v1/chat/completions`
+- Operational endpoints (`GET /healthz`, `/healthz/models`, `/healthz/creds`) sit outside that surface; see [`PLAN.md`](PLAN.md). Only `/healthz` skips proxy auth, and none may return a credential.
 - Canonical internal model IDs use `provider/model-id`.
 - `GET /v1/models/{model}` must support URL-encoded IDs because model IDs may contain `/`.
 - Reserve `Authorization` for proxy auth compatibility. Do **not** repurpose it for upstream provider override headers.

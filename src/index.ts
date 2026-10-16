@@ -7,9 +7,15 @@
 
 import { serve } from '@hono/node-server'
 import { getLogLevels, isLogLevel, type LogLevel } from '@logtape/logtape'
-import { type CliOverrides, loadConfig } from '@proxy/config/env'
+import { type CliOverrides, loadConfig, type ServerConfig } from '@proxy/config/env'
 import { getConfigPath, loadConfigFromFile } from '@proxy/config/schema'
-import { configureLogging, defaultLogFormat, proxyLogger } from '@proxy/logging'
+import {
+  configureLogging,
+  isLogFormat,
+  LOG_FORMATS,
+  proxyLogger,
+  resolveLogFormat
+} from '@proxy/logging'
 import { getAvailableModels, initRegistry } from '@proxy/pi/registry'
 import { createApp } from '@proxy/server/app'
 import { defineCommand, runMain } from 'citty'
@@ -41,6 +47,20 @@ interface CliArgs {
   'max-body-size'?: string | undefined
   'upstream-timeout'?: string | undefined
   'log-level'?: string | undefined
+  'log-format'?: string | undefined
+}
+
+/** Why a logging flag is unusable, or undefined. A typo fails the start, never a stack trace. */
+function invalidLoggingFlag(args: CliArgs): string | undefined {
+  const level = args['log-level']
+  if (level !== undefined && !isLogLevel(level)) {
+    return `--log-level must be one of: ${getLogLevels().join(', ')}`
+  }
+  const format = args['log-format']
+  if (format !== undefined && !isLogFormat(format)) {
+    return `--log-format must be one of: ${LOG_FORMATS.join(', ')}`
+  }
+  return undefined
 }
 
 /** Build CLI overrides from parsed args. */
@@ -64,6 +84,39 @@ function buildCliOverrides(args: CliArgs): CliOverrides {
   const logLevel = args['log-level']
   if (logLevel !== undefined && isLogLevel(logLevel)) cli.logLevel = logLevel
   return cli
+}
+
+/**
+ * Configure logging, then load the config. Config loading logs too, so logging is configured first
+ * with the level the CLI or env asks for, then again with the fully resolved level (which may come
+ * from the config file). Undefined, with exit code 1, when a logging flag is unusable.
+ */
+function loadConfigWithLogging(args: CliArgs): ServerConfig | undefined {
+  const invalidFlag = invalidLoggingFlag(args)
+  if (invalidFlag !== undefined) {
+    process.stderr.write(`${invalidFlag}\n`)
+    process.exitCode = 1
+    return undefined
+  }
+
+  const format = resolveLogFormat(args['log-format'], process.env.PI_PROXY_LOG_FORMAT)
+  const earlyLogLevel =
+    [args['log-level'], process.env.PI_PROXY_LOG_LEVEL].find(
+      (candidate): candidate is LogLevel => candidate !== undefined && isLogLevel(candidate)
+    ) ?? 'info'
+  configureLogging({ level: earlyLogLevel, format })
+
+  const config = loadConfig(buildCliOverrides(args))
+  configureLogging({ level: config.logLevel, format })
+  const envFormat = process.env.PI_PROXY_LOG_FORMAT
+  if (envFormat !== undefined && !isLogFormat(envFormat)) {
+    lifecycleLogger.warn('Ignoring PI_PROXY_LOG_FORMAT={value}: not one of {formats}', {
+      value: envFormat,
+      formats: LOG_FORMATS
+    })
+  }
+  lifecycleLogger.debug('Logging at {level} as {format}', { level: config.logLevel, format })
+  return config
 }
 
 const main = defineCommand({
@@ -100,6 +153,10 @@ const main = defineCommand({
       type: 'string',
       description: `Lowest log level written: ${getLogLevels().join(', ')} (default: from config or info)`
     },
+    'log-format': {
+      type: 'string',
+      description: `Log output: ${LOG_FORMATS.join(', ')} (default: pretty on a terminal, json otherwise)`
+    },
     'config': {
       type: 'boolean',
       description: 'Show effective configuration and exit'
@@ -116,25 +173,8 @@ const main = defineCommand({
       return
     }
 
-    // A level the user typed wrong fails the start, with the valid ones; never a stack trace.
-    const requestedLevel = args['log-level']
-    if (requestedLevel !== undefined && !isLogLevel(requestedLevel)) {
-      process.stderr.write(`--log-level must be one of: ${getLogLevels().join(', ')}\n`)
-      process.exitCode = 1
-      return
-    }
-
-    // Config loading logs too, so logging is configured first with the level the CLI or env asks
-    // for, then again with the fully resolved level (which may come from the config file).
-    const format = defaultLogFormat()
-    const earlyLogLevel =
-      [args['log-level'], process.env.PI_PROXY_LOG_LEVEL].find(
-        (candidate): candidate is LogLevel => candidate !== undefined && isLogLevel(candidate)
-      ) ?? 'info'
-    configureLogging({ level: earlyLogLevel, format })
-
-    const config = loadConfig(buildCliOverrides(args))
-    configureLogging({ level: config.logLevel, format })
+    const config = loadConfigWithLogging(args)
+    if (config === undefined) return
 
     // Never the auth token itself: only whether proxy auth is on.
     lifecycleLogger.debug('Effective config', {
@@ -150,8 +190,7 @@ const main = defineCommand({
       modelExposureMode: config.modelExposureMode,
       customModelCount: config.customModels.length,
       providerPrefixCount: Object.keys(config.providerPrefixes).length,
-      logLevel: config.logLevel,
-      logFormat: format
+      logLevel: config.logLevel
     })
     if (config.proxyAuthToken === undefined) {
       // Off-loopback without auth is an exposure worth seeing at the default level.

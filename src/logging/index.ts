@@ -11,6 +11,7 @@
  *   server.http        one line per request and per response; client disconnects
  *   server.auth        proxy authentication decisions
  *   server.chat        the chat completions route: model resolution, dispatch, upstream errors
+ *   server.health      failed /healthz detail checks (a passing check logs nothing above debug)
  *   config             config file, env var and CLI resolution
  *   openai.messages    message conversion          openai.tools       tool conversion
  *   openai.sse         streaming responses         openai.responses   non-streaming responses
@@ -77,16 +78,41 @@ export const REDACTED_FIELDS: readonly string[] = [
 /** `pretty` for a person at a terminal, `json` (JSON Lines) for anything that parses logs. */
 export type LogFormat = 'pretty' | 'json'
 
+export const LOG_FORMATS: readonly LogFormat[] = ['pretty', 'json']
+
+export function isLogFormat(value: string): value is LogFormat {
+  return value === 'pretty' || value === 'json'
+}
+
 /** Pretty when stderr is a terminal, JSON Lines when it is piped or redirected. */
 export function defaultLogFormat(): LogFormat {
   return process.stderr.isTTY ? 'pretty' : 'json'
 }
 
+/**
+ * The format to log in: the `--log-format` flag, then `PI_PROXY_LOG_FORMAT`, then
+ * `defaultLogFormat()`. A value that names no format is skipped; the caller reports it.
+ */
+export function resolveLogFormat(
+  flagFormat: string | undefined,
+  envFormat: string | undefined,
+  fallback: () => LogFormat = defaultLogFormat
+): LogFormat {
+  const chosen = [flagFormat, envFormat].find(
+    (candidate): candidate is LogFormat => candidate !== undefined && isLogFormat(candidate)
+  )
+  return chosen ?? fallback()
+}
+
 function formatterFor(format: LogFormat): TextFormatter {
+  // JSON keeps LogTape's UTC `@timestamp`: unambiguous for anything that parses or ships logs.
   if (format === 'json') return jsonLinesFormatter
-  // `bare` prints strings without quotes: a terminal reader wants `GET /v1/models`, not `'GET'`.
+  // A person reads local time: `timeZone: null` is the system zone (the `TZ` variable in a
+  // container), with the offset shown so a line is never ambiguous. `bare` prints strings without
+  // quotes: a reader wants `GET /v1/models`, not `'GET'`.
   return getPrettyFormatter({
-    timestamp: 'time',
+    timestamp: 'date-time-tz',
+    timeZone: null,
     categoryWidth: 32,
     value: 'bare',
     wordWrap: false

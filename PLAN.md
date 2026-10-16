@@ -72,6 +72,25 @@ Strict tooling through [Vite+](https://viteplus.dev), configured in `vite.config
 - `GET /v1/models/{model}`
 - `POST /v1/chat/completions`
 
+### Operational endpoints
+
+Outside the OpenAI-compatible surface, not shaped like OpenAI responses (`src/server/health.ts`):
+
+- `GET /healthz`: liveness, no proxy auth, `{ "status": "ok" }` only, no upstream calls.
+- `GET /healthz/models`: available and exposed model counts, exposure modes, `models.json` load
+  error; `503` when nothing is exposed.
+- `GET /healthz/creds`: per provider with a credential, its type, source and available model
+  count; local state only unless `?verify=true` resolves each credential (may refresh OAuth);
+  `503` when no provider has one or a verification fails. A verification error carries pi's
+  summary, the token URL and the upstream status only (`summarizeAuthError`); the upstream body
+  and pi's stack stay out of the response, and the body reaches the log at `debug` only.
+
+The detail endpoints require proxy auth when it is on, because they name providers and models.
+None returns a credential. Without a proxy token, `?verify=true` is open to whoever can reach the
+port, as `/v1/chat/completions` is; it can do less harm than a completion: pi refreshes a token only
+when it is about to expire, and runs the refresh inside its credential store's serialized `modify`,
+so repeated or concurrent calls neither refresh every time nor refresh twice.
+
 ### Unsupported endpoints
 
 Return OpenAI-style errors for:
@@ -963,9 +982,11 @@ Recommendation:
 ## Observability
 
 Logging is LogTape (`src/logging/index.ts`, whose header defines the categories, the level guide and
-what must never be logged). The CLI configures stderr output (pretty on a TTY, JSON Lines
-otherwise) at `--log-level` / `PI_PROXY_LOG_LEVEL` / `logLevel` (default `info`); the pi extension
-logs to a file only when `PI_PROXY_EXTENSION_LOG_FILE` is set.
+what must never be logged). The CLI writes to stderr at `--log-level` / `PI_PROXY_LOG_LEVEL` /
+`logLevel` (default `info`), as pretty lines in local time (the system zone, `TZ` in a container)
+on a TTY and JSON Lines with a UTC `@timestamp` otherwise; `--log-format` / `PI_PROXY_LOG_FORMAT`
+(`pretty`, `json`) overrides that choice. Passing `/healthz` checks log at `debug`. The pi
+extension logs to a file only when `PI_PROXY_EXTENSION_LOG_FILE` is set.
 
 Minimum production observability:
 

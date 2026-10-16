@@ -56,7 +56,8 @@ export type ExposureConfigReader = () => ModelExposureConfig | Promise<ModelExpo
 const chatLogger = proxyLogger('server', 'chat')
 const httpLogger = proxyLogger('server', 'http')
 
-async function fileConfigReader(): Promise<ModelExposureConfig> {
+/** The exposure config from the proxy's config file and pi's enabledModels setting. */
+export async function fileConfigReader(): Promise<ModelExposureConfig> {
   const file = loadConfigFromFile()
   const enabledModels = await getEnabledModels()
   chatLogger.debug('Read exposure config: {modelExposureMode}, {publicModelIdMode}', {
