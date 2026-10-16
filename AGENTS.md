@@ -68,27 +68,30 @@ Lint rules are the Viaanix shared set, copied into `vite.config.ts`. Lint passes
 Common commands:
 
 ```bash
-vp check          # format check + lint + type check
-vp check --fix    # apply formatting and lint fixes
-vp test           # all tests (conformance needs provider credentials)
-vp run test:ci    # unit + integration
-vp pack           # build
+pnpm run check:all  # the gate: format → lint + type check → tests → build (scripts/gate.ts)
+vp check --fix      # apply formatting and lint fixes
+vp test             # all tests (conformance needs provider credentials)
+vp run test:ci      # unit + integration
+vp pack             # build
 ```
+
+`scripts/gate.ts` is the single definition of "green": the pre-commit hook, CI (`.github/workflows/ci.yml`) and the release workflow all run `check:all`. Add a check there, not in a hook or a workflow.
 
 Expected discipline in this repo:
 
-- Before committing, run **`vp check` + tests**.
-- If packaging/runtime entrypoints changed, run `vp pack`.
+- Before committing, run **`pnpm run check:all`** (the pre-commit hook runs it too).
 - If only docs changed, skip code checks unless the change affects documented commands or behavior.
 - In your summary, state exactly what you ran and what you did **not** run.
 
 Hook-backed workflow already exists (`.vite-hooks/`, installed by `vp config` on `prepare`) and should be preserved:
 
 - `commit-msg` -> commitlint
-- `pre-commit` -> `vp staged` (`vp check --fix` on staged files)
-- `pre-push` -> lockfile sync check, `vp check`, `vp run test:ci`
+- `pre-commit` -> `pnpm run check:all` over the working tree
+- `pre-push` -> lockfile sync check
 
-Do not weaken these hooks unless the user asks.
+CI (`.github/workflows/`): `ci.yml` (`gate`, pull requests into `dev`/`main` and pushes to `dev`), `secret-scan.yml` (gitleaks over every pushed commit), `claude-pr-review.yml` (manual Claude review; needs the `CLAUDE_CODE_OAUTH_TOKEN` secret), `publish.yml` (release on `main`).
+
+Do not weaken these hooks or workflows unless the user asks.
 
 ## Git workflow
 
@@ -130,3 +133,5 @@ Stop and confirm with the user before:
 ## Scope of this file
 
 A single repo-root `AGENTS.md` is enough for the current tree. Add nested `AGENTS.md` files only if a subtree develops a genuinely different workflow or safety boundary.
+
+`CLAUDE.md` is a symlink to this file, so Claude Code (and the Claude PR review) load the same rules. Edit `AGENTS.md`; never replace the symlink with a copy.

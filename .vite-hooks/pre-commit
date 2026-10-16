@@ -1,1 +1,4 @@
-vp staged
+# The gate (scripts/gate.ts) over the working tree as it is: the same `check:all` CI runs, so a
+# commit is green here exactly when it is green there. Commit with nothing in the tree you do not
+# mean to commit. For a deliberate work-in-progress commit, bypass with `git commit --no-verify`.
+pnpm run check:all

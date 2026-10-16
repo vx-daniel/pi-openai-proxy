@@ -1,0 +1,261 @@
+name: Claude PR Review
+
+# A single-pass Claude review of one pull request, run BY HAND on GitHub (`workflow_dispatch`).
+# Ported from zen-harness-foundation's workflow of the same name, without its local review worker and
+# its comment-list job (that repository's `scripts/docs/touched-comments.ts` has no counterpart here).
+#
+# BY HAND: Actions → Claude PR Review → Run workflow, with the pull request's number. It reviews the whole
+# pull request. This is not a required status check (ci.yml and secret-scan.yml are).
+#
+# ⚠ NO `track_progress`. claude-code-action (v1.0.217, `src/modes/detector.ts`) throws when `track_progress`
+# is set on an event other than pull_request or issues, and a manual run is `workflow_dispatch`.
+#
+# REQUIRES the repository secret `CLAUDE_CODE_OAUTH_TOKEN`. Without it the job writes a note to the run
+# summary and stops — see "Check for the Claude token" below — so the workflow stays green rather than
+# showing a red X until the secret is added.
+#
+# AN EDIT HERE IS VERIFIED AFTER MERGE. A manual run executes the copy of this file on the ref it is started
+# from, normally the default branch (`dev`), so a change to it runs only once merged. (Under the
+# `pull_request` trigger, `claude-code-action` refused to run a pull request whose copy differed from the
+# default branch's — "Skipping action due to workflow validation" — and reported SUCCESS while reviewing
+# nothing.)
+#
+# ⚠ A FORK'S PULL REQUEST: read its diff before running this on it. A manual run gives the review job
+# `CLAUDE_CODE_OAUTH_TOKEN` whoever wrote the pull request; the `pull_request` trigger never gave a fork's
+# run secrets.
+#
+# PROJECT CONVENTIONS ARE READ, NOT RESTATED. `CLAUDE.md` is a symlink to `AGENTS.md` (the repo's always-on
+# rules), so Claude Code auto-loads them; the prompt also sends the reviewer to `PLAN.md` (API compatibility
+# policy and security boundaries), so the review enforces what this project documents rather than a generic
+# checklist.
+#
+# SELF-CONTAINED ON PURPOSE. This is not a thin caller delegating to a shared reusable workflow: that
+# arrangement only runs where the shared repository is reachable. The cost of inlining is that improvements
+# no longer arrive centrally.
+on:
+  workflow_dispatch:
+    inputs:
+      pull_request:
+        description: Number of the pull request to review
+        required: true
+        type: number
+
+concurrency:
+  group: claude-pr-review-${{ inputs.pull_request }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  # A manual run carries no pull request event, so the fields the review needs are read here, once.
+  pull-request:
+    name: Read the pull request
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    timeout-minutes: 5
+    outputs:
+      number: ${{ steps.read.outputs.number }}
+      head_sha: ${{ steps.read.outputs.head_sha }}
+      draft: ${{ steps.read.outputs.draft }}
+      author_type: ${{ steps.read.outputs.author_type }}
+    steps:
+      - name: Read the pull request's head, draft state and author
+        id: read
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ inputs.pull_request }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPO/pulls/$NUMBER" --jq '"number=\(.number)\nhead_sha=\(.head.sha)\ndraft=\(.draft)\nauthor_type=\(.user.type)"' >> "$GITHUB_OUTPUT"
+
+  review:
+    name: Claude review
+    runs-on: ubuntu-latest
+    needs: pull-request
+    # Skip drafts and bot-authored pull requests.
+    if: >-
+      needs.pull-request.outputs.draft == 'false' &&
+      needs.pull-request.outputs.author_type != 'Bot'
+    timeout-minutes: 10
+
+    steps:
+      # THE MISSING-TOKEN GUARD, and it must be a step rather than a job-level `if:` — GitHub does not make
+      # the `secrets` context available in job-level conditions, only in step `env`.
+      #
+      # Without this the action stubs out silently in about two seconds and the run goes green having reviewed
+      # nothing, which is the worst of the three possible outcomes: it looks like the review happened.
+      - name: Check for the Claude token
+        id: token
+        env:
+          CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${CLAUDE_TOKEN:-}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "present=false" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Claude PR review skipped"
+            echo
+            echo 'No `CLAUDE_CODE_OAUTH_TOKEN` secret is set on this repository, so the review did not run.'
+            echo
+            echo 'To enable it: **Settings → Secrets and variables → Actions → New repository secret**,'
+            echo 'named `CLAUDE_CODE_OAUTH_TOKEN`.'
+            echo
+            echo 'This is not a failure. The workflow ships enabled so that adding the secret is the only'
+            echo 'step required, and skips cleanly until then.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ⚠ THE PULL REQUEST'S HEAD, BY SHA. A manual run's default checkout is the ref it was started from: the
+      # reviewer would read the default branch's files while judging the pull request's diff.
+      - name: Checkout PR head
+        if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.pull-request.outputs.head_sha }}
+          fetch-depth: 1
+
+      - name: Run Claude review
+        id: claude
+        if: steps.token.outputs.present == 'true'
+        # PINNED, NOT `@v1`. `v1` moved to v1.0.218 on 2026-09-08 (Claude Code 2.1.265) and every run on
+        # ubuntu-latest since failed before reading the diff: the native installer prints "successfully
+        # installed" while `~/.local/bin/claude` is missing, so the SDK spawns a path that does not exist —
+        # anthropics/claude-code-action#1817. This is v1.0.217, the last release before the bump. Unpin (or
+        # move the SHA forward) once #1817 is closed; a floating tag is what let the break arrive unannounced.
+        uses: anthropics/claude-code-action@9c5ddab2e6d17b83ea679153b31f1d5f023cf636 # v1.0.217
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ needs.pull-request.outputs.number }}
+            HEAD: ${{ needs.pull-request.outputs.head_sha }}
+
+            Single-pass PR review. No subagents. Be concise.
+
+            ## Procedure
+
+            1. `gh pr diff $PR_NUMBER`: read the full diff
+            2. For non-trivial changes, `Read` the surrounding file for context
+            3. Apply project conventions:
+               - `AGENTS.md` (also `CLAUDE.md`, a symlink to it, so it is auto-loaded) is this
+                 repository's always-on rule set — stable HTTP surface, model ID policy, header
+                 contracts, coding rules. If it is not already in your context, `Read` it. Follow it.
+               - `Read` the sections of `PLAN.md` the diff touches: it holds the API compatibility
+                 policy and the security boundaries
+               - If `.claude/rules/*.md` exist, treat each as an additional hard rule
+            4. Cover these aspects inline (do NOT spawn separate agents):
+               - **Code** — bugs, logic errors, race conditions, convention compliance
+               - **Tests** — coverage gaps for changed code; mocks must stub the full module surface
+               - **Errors** — silent failures, broad catches, unjustified fallbacks
+               - **Types** — type design and invariants if new types added
+               - **Comments** — accuracy vs code, comment rot in the changed code
+            5. Security pass on changed lines: injection, auth bypass, secret leakage, OWASP top-10
+
+            ## Output
+
+            Post one PR comment via `gh pr comment $PR_NUMBER --body-file -` using exactly this
+            template (every section required — write "None" if a section has nothing to report):
+
+            ```markdown
+            ## Code Review
+
+            ### Overview
+            {1-3 sentences: what the PR does}
+
+            ### Strengths
+            {bullets — conventions followed, good architecture, solid tests}
+
+            ### Issues & Suggestions
+            {numbered. Each: **N. Title** — severity (blocker / load-bearing / soft nit)
+            description + concrete suggestion with code example if applicable}
+
+            ### Bugs Found
+            {reproduction, expected vs actual, severity. OR "None"}
+
+            ### Testing
+            {what's covered, what's missing — specific test matrix if gaps exist}
+
+            ### Runtime Verification
+            Not performed — this reviewer is read-only by design and cannot execute the project's gate.
+            PR body claims: {one-line summary of the PR's verification claims, or "none stated"}.
+
+            ### Risk Assessment
+            Correctness: {one line}
+            Performance: {one line}
+            Security: {one line}
+
+            ### Verdict
+            {Ship it / Approve-with-nits / Needs work}
+            ```
+
+            ## Discipline
+
+            - **Severity:** blocker = correctness/trust violation; load-bearing = correct now but
+              breaks under foreseeable evolution; soft nit = style beyond what rules enforce
+            - **Ship it discipline:** "Ship it" ONLY when no work remains. If any blocker or
+              unresolved load-bearing issue exists, use "Approve-with-nits" or "Needs work"
+            - **Runtime verification is OUT OF SCOPE, not blocked.** The tool grant below is read-only
+              on purpose — `Read`/`Grep`/`Glob` plus `gh pr view|diff|comment`, and nothing that runs the
+              project. Report it as the designed limit it is. Do NOT write that a sandbox blocked you, or
+              that a command needed approval: that reads as a broken environment and hides a deliberate
+              choice. It also follows that a verdict rests on reading PLUS the pull request's own stated
+              receipts, so weigh an unverified claim as a claim.
+            - Do NOT comment outside the diff
+            - Do NOT modify the PR branch
+            - Do NOT spawn subagents (Task tool is not available)
+            - If diff is whitespace- or comment-only, post a one-line "Approve" note
+
+          # The model and effort are PINNED; unpinned, the action runs on its own default.
+          claude_args: |
+            --model claude-sonnet-5-5 --effort medium
+            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*)"
+
+      - name: Post run indicator (sticky comment)
+        # WHY THIS EXISTS EVEN THOUGH THE TOKEN IS ALREADY CHECKED. The action can succeed without running
+        # the model, and a green step then reads as a review that happened. The action sets `execution_file`
+        # only after a completed run, so an empty value means "did not run", and that is reported as such.
+        #
+        # `execution_file` alone is NOT "the review happened": upstream, the step FAILED (the binary was
+        # missing, #1817 above) and still set it. So the step's own outcome is read FIRST and on its own: any
+        # non-success is a failure, whether or not a file was written.
+        #
+        # Upserted by a hidden marker so repeated runs update one comment instead of spamming the PR, and only
+        # this workflow's own comment (`github-actions[bot]`). One comment object per line: `--paginate` runs
+        # `--jq` on each page, so a filter that builds one array per page is not one JSON document past 30
+        # comments.
+        if: ${{ always() && steps.token.outputs.present == 'true' && steps.claude.outcome != 'skipped' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ needs.pull-request.outputs.number }}
+          SHA: ${{ needs.pull-request.outputs.head_sha }}
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+          CLAUDE_OUTCOME: ${{ steps.claude.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          MARKER='<!-- claude-run-status: pr-review -->'
+          if [ "${CLAUDE_OUTCOME}" != "success" ]; then
+            body="${MARKER}"$'\n'"❌ **Claude PR review failed** on \`${SHA:0:7}\` (step outcome: ${CLAUDE_OUTCOME}) — no verdict was posted. See the [run](${RUN_URL})."
+          elif [ -n "${EXECUTION_FILE}" ]; then
+            body="${MARKER}"$'\n'"✅ **Claude PR review** ran on \`${SHA:0:7}\`."
+          else
+            echo "::warning::Claude PR review did not run despite a token being present."
+            body="${MARKER}"$'\n'"⚠️ **Claude PR review did not run**, and the \`CLAUDE_CODE_OAUTH_TOKEN\` secret IS set. Check the workflow logs — the token may be expired or invalid."
+          fi
+          # Upsert by hidden marker: PATCH the existing sticky comment, else POST a new one.
+          existing="$(gh api "repos/${REPO}/issues/${NUMBER}/comments" --paginate \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"${MARKER}\"))) | .id" | sed -n 1p)"
+          if [ -n "${existing}" ]; then
+            gh api -X PATCH "repos/${REPO}/issues/comments/${existing}" -f body="${body}" >/dev/null
+          else
+            gh api -X POST "repos/${REPO}/issues/${NUMBER}/comments" -f body="${body}" >/dev/null
+          fi

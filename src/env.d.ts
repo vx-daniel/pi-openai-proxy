@@ -16,5 +16,7 @@ declare namespace NodeJS {
     PI_PROXY_REMOTE_IMAGES?: string | undefined
     PI_PROXY_MAX_BODY_SIZE?: string | undefined
     PI_PROXY_UPSTREAM_TIMEOUT_MS?: string | undefined
+    /** Set by the package manager running a script; read by `scripts/gate.ts`. */
+    npm_config_user_agent?: string | undefined
   }
 }
