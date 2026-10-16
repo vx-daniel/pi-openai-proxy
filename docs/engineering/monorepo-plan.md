@@ -38,7 +38,7 @@ pi-proxy/
 │   │   ├── src/
 │   │   │   ├── config/             Config schema, env loading, normalization
 │   │   │   ├── openai/             Schemas, messages, SSE, tools, model-exposure
-│   │   │   ├── pi/                 Registry bridge, completeSimple/streamSimple
+│   │   │   ├── pi/                 Registry bridge, ModelRuntime streamSimple/completeSimple
 │   │   │   ├── server/             Hono app, routes, middleware, errors
 │   │   │   ├── utils/              isRecord, shared guards
 │   │   │   ├── env.d.ts
@@ -199,9 +199,9 @@ packages:
   - "packages/*"
 
 catalog:
-  "@earendil-works/pi-ai": "^0.73.0"
-  "@earendil-works/pi-coding-agent": "^0.73.0"
-  "@earendil-works/pi-tui": "^0.73.0"
+  "@earendil-works/pi-ai": "^1.3.0"
+  "@earendil-works/pi-coding-agent": "^1.3.0"
+  "@earendil-works/pi-tui": "^1.3.0"
   "typebox": "^1.1.38"
   "@types/bun": "^1.3.11"
   "@types/node": "^25.5.0"

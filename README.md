@@ -314,8 +314,8 @@ The extension detects externally running instances and shows their status via `/
               ├────────────────────────►│                                  │
               │                         │  ┌────────────────────────────┐  │
               │                         │  │        Pi SDK              │  │
-              │  SSE / JSON             │  │  ├─ ModelRegistry          │  │
-              │◄────────────────────────┤  │  ├─ AuthStorage            │  │
+              │  SSE / JSON             │  │  ├─ ModelRuntime           │  │
+              │◄────────────────────────┤  │  ├─ SettingsManager        │  │
               │                         │  │  ├─ streamSimple()         │  │
                                         │  │  └─ completeSimple()       │  │
                                         │  └────────────────────────────┘  │

@@ -10,7 +10,7 @@ Auto-generated from repository context. Last updated: 2026-03-31
 - Hono
 - Zod v4
 - TypeBox
-- pi SDK (`@mariozechner/pi-ai`, `@mariozechner/pi-coding-agent`)
+- pi SDK (`@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`), Pi 1.x
 - tsdown
 - Biome
 - oxlint
@@ -66,6 +66,7 @@ pnpm test
 
 ## Recent Changes
 
+- Pi 1.x migration: `ModelRuntime` replaces `AuthStorage` and `ModelRegistry.create()`; `usage.prompt_tokens` now includes cached tokens.
 - Phase 3D compatibility and resilience decisions were finalized.
 - A `chat_request` log line now records the requested and resolved model of each chat request (ids and flags only).
 - Model exposure and identifier controls were added to the proxy contract.
