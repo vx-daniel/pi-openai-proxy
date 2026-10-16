@@ -78,7 +78,9 @@ Outside the OpenAI-compatible surface, not shaped like OpenAI responses (`src/se
 
 - `GET /healthz`: liveness, no proxy auth, `{ "status": "ok" }` only, no upstream calls.
 - `GET /healthz/models`: available and exposed model counts, exposure modes, `models.json` load
-  error; `503` when nothing is exposed.
+  error; `503` when nothing is exposed. A parse error is reduced to where the file is not valid
+  JSON (`describeModelsJsonError`): JSON.parse messages quote the text around the fault, often a
+  key. The same reduced text is what the startup warning logs.
 - `GET /healthz/creds`: per provider with a credential, its type, source and available model
   count; local state only unless `?verify=true` resolves each credential (may refresh OAuth);
   `503` when no provider has one or a verification fails. A verification error carries pi's
