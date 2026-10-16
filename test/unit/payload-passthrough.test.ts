@@ -244,3 +244,57 @@ describe('collectPayloadFields: prediction', () => {
     }
   })
 })
+
+// --- collectPayloadFields: the whole payload, per API family ---
+
+describe('collectPayloadFields: whole payload per API family', () => {
+  /** Every passthrough field the proxy accepts, set at once. */
+  const everyField = minimalRequest({
+    tool_choice: 'required',
+    parallel_tool_calls: false,
+    top_p: 0.9,
+    seed: 42,
+    stop: ['END'],
+    user: 'user-1',
+    frequency_penalty: 0.5,
+    presence_penalty: 0.2,
+    metadata: { team: 'j5' },
+    response_format: { type: 'json_object' }
+  })
+
+  const OPENAI_PAYLOAD = {
+    stop: ['END'],
+    user: 'user-1',
+    top_p: 0.9,
+    frequency_penalty: 0.5,
+    presence_penalty: 0.2,
+    seed: 42,
+    response_format: { type: 'json_object' },
+    tool_choice: 'required',
+    parallel_tool_calls: false,
+    metadata: { team: 'j5' }
+  }
+
+  // Catches an extra field forwarded to a provider that rejects unknown fields (Anthropic, Codex),
+  // a field lost or renamed in translation, or Google and Bedrock getting flat fields at all.
+  test.each([
+    ['openai-completions', OPENAI_PAYLOAD],
+    ['openai-responses', OPENAI_PAYLOAD],
+    ['azure-openai-responses', OPENAI_PAYLOAD],
+    ['mistral-conversations', OPENAI_PAYLOAD],
+    [
+      'anthropic-messages',
+      {
+        top_p: 0.9,
+        stop_sequences: ['END'],
+        tool_choice: { type: 'any', disable_parallel_tool_use: true },
+        metadata: { user_id: 'user-1' }
+      }
+    ],
+    ['openai-codex-responses', { tool_choice: 'required', parallel_tool_calls: false }],
+    ['google-generative-ai', undefined],
+    ['bedrock-converse-stream', undefined]
+  ])('%s gets exactly its payload', (api, expected) => {
+    expect(collectPayloadFields(everyField, api)).toEqual(expected)
+  })
+})
