@@ -2,12 +2,15 @@
  * Hono middleware: request ID injection, proxy auth, body size limits, structured logging.
  */
 
+import type { MiddlewareHandler } from "hono";
 import type { ServerConfig } from "@proxy/config/env";
 import { authenticationError, invalidRequest } from "@proxy/server/errors";
+import { HTTP_PAYLOAD_TOO_LARGE, HTTP_UNAUTHORIZED } from "@proxy/server/http-status";
 import { logDisconnect, logRequest, logResponse } from "@proxy/server/logging";
 import { generateRequestId } from "@proxy/server/request-id";
 import type { ProxyEnv } from "@proxy/server/types";
-import type { MiddlewareHandler } from "hono";
+
+const BEARER_PREFIX = "Bearer ";
 
 /**
  * Inject request ID, upstream API key, and logging context into every request.
@@ -55,18 +58,20 @@ export function proxyAuthMiddleware(config: ServerConfig): MiddlewareHandler<Pro
 	return async (c, next) => {
 		if (config.proxyAuthToken === undefined) {
 			await next();
-			return;
+			return undefined;
 		}
 
 		const authHeader = c.req.header("authorization");
 		if (authHeader === undefined) {
-			return c.json(authenticationError("Missing Authorization header"), 401);
+			return c.json(authenticationError("Missing Authorization header"), HTTP_UNAUTHORIZED);
 		}
 
-		const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+		const token = authHeader.startsWith(BEARER_PREFIX)
+			? authHeader.slice(BEARER_PREFIX.length)
+			: undefined;
 
 		if (token !== config.proxyAuthToken) {
-			return c.json(authenticationError("Invalid proxy authentication token"), 401);
+			return c.json(authenticationError("Invalid proxy authentication token"), HTTP_UNAUTHORIZED);
 		}
 
 		await next();
@@ -85,21 +90,19 @@ export function disconnectMiddleware(): MiddlewareHandler<ProxyEnv> {
 
 		// Listen for client disconnect via the request signal
 		const reqSignal = c.req.raw.signal;
-		if (reqSignal !== undefined) {
-			const onAbort = () => {
-				const requestId = c.get("requestId");
-				logDisconnect({
-					requestId,
-					method: c.req.method,
-					path: c.req.path,
-				});
-				controller.abort();
-			};
-			if (reqSignal.aborted) {
-				onAbort();
-			} else {
-				reqSignal.addEventListener("abort", onAbort, { once: true });
-			}
+		const onAbort = (): void => {
+			const requestId = c.get("requestId");
+			logDisconnect({
+				requestId,
+				method: c.req.method,
+				path: c.req.path,
+			});
+			controller.abort();
+		};
+		if (reqSignal.aborted) {
+			onAbort();
+		} else {
+			reqSignal.addEventListener("abort", onAbort, { once: true });
 		}
 
 		await next();
@@ -116,7 +119,7 @@ export function bodySizeLimitMiddleware(config: ServerConfig): MiddlewareHandler
 		const method = c.req.method;
 		if (method !== "POST" && method !== "PUT" && method !== "PATCH") {
 			await next();
-			return;
+			return undefined;
 		}
 
 		const contentLength = c.req.header("content-length");
@@ -127,7 +130,7 @@ export function bodySizeLimitMiddleware(config: ServerConfig): MiddlewareHandler
 					invalidRequest(
 						`Request body too large. Maximum size: ${String(config.maxBodySize)} bytes`,
 					),
-					413,
+					HTTP_PAYLOAD_TOO_LARGE,
 				);
 			}
 		}

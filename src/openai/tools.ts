@@ -8,9 +8,9 @@
  */
 
 import type { Tool } from "@earendil-works/pi-ai";
+import { type TSchema, Type } from "typebox";
 import { jsonSchemaToTypebox } from "@proxy/openai/json-schema-to-typebox";
 import type { OpenAIFunctionTool } from "@proxy/openai/schemas";
-import { type TSchema, Type } from "typebox";
 
 export interface ToolConversionSuccess {
 	readonly ok: true;
@@ -38,7 +38,10 @@ export function convertTools(openaiTools: OpenAIFunctionTool[]): ToolConversionR
 		const fn = tool.function;
 		let parameters: TSchema;
 
-		if (fn.parameters !== undefined) {
+		if (fn.parameters === undefined) {
+			// No parameters specified -- empty object
+			parameters = Type.Object({});
+		} else {
 			const result = jsonSchemaToTypebox(fn.parameters, `tools[${String(i)}].function.parameters`);
 			if (!result.ok) {
 				return {
@@ -48,9 +51,6 @@ export function convertTools(openaiTools: OpenAIFunctionTool[]): ToolConversionR
 				};
 			}
 			parameters = result.schema;
-		} else {
-			// No parameters specified -- empty object
-			parameters = Type.Object({});
 		}
 
 		piTools.push({

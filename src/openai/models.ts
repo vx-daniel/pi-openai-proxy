@@ -7,8 +7,9 @@
 
 import type { ExposedModel } from "@proxy/openai/model-exposure";
 
+const MS_PER_SECOND = 1000;
 /** Unix timestamp (seconds) from when the module was first loaded. */
-const MODULE_CREATED = Math.floor(Date.now() / 1000);
+const MODULE_CREATED = Math.floor(Date.now() / MS_PER_SECOND);
 
 export interface OpenAIModel {
 	readonly id: string;

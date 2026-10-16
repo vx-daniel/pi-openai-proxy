@@ -6,6 +6,8 @@
 
 import { randomBytes } from "node:crypto";
 
+const REQUEST_ID_BYTES = 12;
+
 export function generateRequestId(): string {
-	return `piproxy-${randomBytes(12).toString("hex")}`;
+	return `piproxy-${randomBytes(REQUEST_ID_BYTES).toString("hex")}`;
 }

@@ -18,7 +18,7 @@
 		"noFallthroughCasesInSwitch": true,
 		"noEmit": true,
 		"lib": ["ES2023"],
-		"types": ["bun"],
+		"types": ["node"],
 		"paths": {
 			"@proxy/*": ["./src/*"]
 		}

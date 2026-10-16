@@ -15,8 +15,8 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { isRecord } from "@proxy/utils/guards";
 import * as z from "zod";
+import { isRecord } from "@proxy/utils/guards";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -83,6 +83,14 @@ export type ZedSyncConfig = z.infer<typeof ZedSyncConfigSchema>;
 // ---------------------------------------------------------------------------
 // Defaults
 // ---------------------------------------------------------------------------
+
+export const BYTES_PER_MB = 1_048_576;
+export const MS_PER_SECOND = 1000;
+
+const MAX_PORT = 65_535;
+const MAX_BODY_SIZE_MB = 500;
+const MIN_UPSTREAM_TIMEOUT_SEC = 5;
+const MAX_UPSTREAM_TIMEOUT_SEC = 600;
 
 export const DEFAULT_CONFIG: Readonly<ProxyConfig> = {
 	host: "127.0.0.1",
@@ -158,15 +166,15 @@ export function normalizeConfig(raw: unknown): ProxyConfig {
 	const rawExposureMode = v["modelExposureMode"];
 	return {
 		host: typeof rawHost === "string" && rawHost.length > 0 ? rawHost : DEFAULT_CONFIG.host,
-		port: clampInt(v["port"], 1, 65535, DEFAULT_CONFIG.port),
+		port: clampInt(v["port"], 1, MAX_PORT, DEFAULT_CONFIG.port),
 		authToken: typeof rawAuthToken === "string" ? rawAuthToken : DEFAULT_CONFIG.authToken,
 		remoteImages:
 			typeof rawRemoteImages === "boolean" ? rawRemoteImages : DEFAULT_CONFIG.remoteImages,
-		maxBodySizeMb: clampInt(v["maxBodySizeMb"], 1, 500, DEFAULT_CONFIG.maxBodySizeMb),
+		maxBodySizeMb: clampInt(v["maxBodySizeMb"], 1, MAX_BODY_SIZE_MB, DEFAULT_CONFIG.maxBodySizeMb),
 		upstreamTimeoutSec: clampInt(
 			v["upstreamTimeoutSec"],
-			5,
-			600,
+			MIN_UPSTREAM_TIMEOUT_SEC,
+			MAX_UPSTREAM_TIMEOUT_SEC,
 			DEFAULT_CONFIG.upstreamTimeoutSec,
 		),
 		lifetime: v["lifetime"] === "session" ? "session" : "detached",
@@ -240,8 +248,8 @@ export function configToEnv(config: ProxyConfig): Record<string, string> {
 		env["PI_PROXY_AUTH_TOKEN"] = config.authToken;
 	}
 	env["PI_PROXY_REMOTE_IMAGES"] = String(config.remoteImages);
-	env["PI_PROXY_MAX_BODY_SIZE"] = String(config.maxBodySizeMb * 1024 * 1024);
-	env["PI_PROXY_UPSTREAM_TIMEOUT_MS"] = String(config.upstreamTimeoutSec * 1000);
+	env["PI_PROXY_MAX_BODY_SIZE"] = String(config.maxBodySizeMb * BYTES_PER_MB);
+	env["PI_PROXY_UPSTREAM_TIMEOUT_MS"] = String(config.upstreamTimeoutSec * MS_PER_SECOND);
 	// Model exposure settings are read from the shared JSON config file at startup.
 	// They are not passed as env vars because the proxy loads the config file directly.
 	return env;

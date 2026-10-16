@@ -46,16 +46,19 @@ Out of scope for the stable proxy:
 
 ## Tooling and type safety
 
-Strict tooling, identical to pi-acp:
+Strict tooling through [Vite+](https://viteplus.dev), configured in `vite.config.ts`:
 
 - **TypeScript**: ultra-strict (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noPropertyAccessFromIndexSignature`)
-- **Biome**: format + lint (recommended rules, `noExplicitAny: error`, `noFloatingPromises: error`, `noUnnecessaryConditions: error`)
-- **oxlint**: type-aware with `.oxlintrc.json` (`no-unsafe-*`, `strict-boolean-expressions`, `consistent-type-assertions`, zod plugin, import-alias)
+- **Oxfmt** (`vp fmt`): tabs, 100 columns, sorted imports; Markdown is left as written
+- **Oxlint** (`vp lint`): the Viaanix shared rules (copied and flattened from `Viaanix/oxc-config-viaanix` v4.0.0 strict: base, TypeScript, type-aware, strict layers), type checking, `maxWarnings: 0`, and `reportUnusedDisableDirectives: deny`; plus repo additions: `no-unsafe-type-assertion`, `no-unnecessary-condition`, stricter `no-unused-vars`, zod plugin, import-alias plugin, and repo rules in `lint/repo-rules.ts` (`no-enum`, `no-delete`, `no-implicit-any-let`). `no-console` is off only for `src/server/logging.ts` and `src/index.ts`
+- **`vp check`**: format, lint, and type check in one pass
+- **Vitest** (`vp test`): tests import from `vite-plus/test`
+- **tsdown** (`vp pack`): ESM build with `.d.ts`
 - **Zod v4**: namespace import (`import * as z`), `safeParse()` for all external data, `z.int()` for integer fields
 - **Type guards**: `isRecord()` for narrowing `unknown`, never `as` casts
 - **Import aliases**: `@proxy/*` -> `src/*`, no `.js` extensions, no relative imports
 - **Typed env**: `src/env.d.ts` for `process.env` dot notation
-- **lefthook**: pre-commit (oxlint-fix, biome format, lint, typecheck), pre-push (lockfile sync, typecheck, lint, test)
+- **Git hooks** (`.vite-hooks/`): pre-commit (`vp staged` -> `vp check --fix` on staged files), commit-msg (commitlint), pre-push (lockfile sync, `vp check`, `test:ci`)
 - **commitlint**: conventional commits via `@commitlint/config-conventional`
 - **semantic-release**: changelog, npm publish, GitHub release, git commit
 
@@ -738,9 +741,9 @@ No production code imports it. Remove it along with its test file.
 
 `routes.ts` is the sole composition root (267 lines, 15 imports). The chat completions handler is ~170 lines covering body parse, validate, resolve model, convert messages, convert tools, check API key, and stream/non-stream branching. This is manageable for the current three-endpoint surface but should be decomposed if new endpoints or complex middleware (agentic mode) are added.
 
-`extensions/proxy.ts` (896 lines) mixes process management, config UI, model queries, verification logic, and TUI rendering. It is isolated from the core proxy. If it grows further (agentic mode controls), extract helpers into separate extension modules.
+The pi extension lives in `extensions/proxy/`, isolated from the core proxy. pi loads `index.ts` (the `/proxy` command family and lifecycle hooks) as the single extension; the sibling modules split the rest: `state.ts` (shared config/registry state), `process.ts` (PID file, probe, start/stop/status), `reports.ts` (show/models/verify), `zed-sync.ts`, `settings-panel.ts`, and `model-selector.ts`. Add new extension modules there rather than as top-level files in `extensions/`, which pi would load as separate extensions.
 
-The proxy has no concurrency controls. Bun's runtime handles request parallelism, but
+The proxy has no concurrency controls. Node's runtime handles request parallelism, but
 there are no semaphores, connection pools, or circuit breakers protecting upstream
 providers. This is acceptable for local single-user use but would need addressing for
 any multi-user or high-concurrency deployment.

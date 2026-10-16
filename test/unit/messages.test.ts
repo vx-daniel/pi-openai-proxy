@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { assert, describe, expect, test } from "vite-plus/test";
 import { convertMessages } from "@proxy/openai/messages";
 import type { OpenAIMessage } from "@proxy/openai/schemas";
 
@@ -36,9 +36,8 @@ describe("convertMessages", () => {
 		expect(result.context.messages).toHaveLength(1);
 		const msg = result.context.messages[0];
 		expect(msg?.role).toBe("user");
-		if (msg?.role === "user") {
-			expect(msg.content).toBe("Hello world");
-		}
+		assert(msg?.role === "user");
+		expect(msg.content).toBe("Hello world");
 	});
 
 	test("converts assistant messages into history", () => {
@@ -113,14 +112,12 @@ describe("convertMessages", () => {
 		if (!result.ok) return;
 		expect(result.context.messages).toHaveLength(1);
 		const msg = result.context.messages[0];
-		if (msg?.role === "user" && Array.isArray(msg.content)) {
-			expect(msg.content).toHaveLength(2);
-			const imagePart = msg.content[1];
-			if (imagePart?.type === "image") {
-				expect(imagePart.mimeType).toBe("image/png");
-				expect(imagePart.data).toBe("iVBORw0KGgo=");
-			}
-		}
+		assert(msg?.role === "user" && Array.isArray(msg.content));
+		expect(msg.content).toHaveLength(2);
+		const imagePart = msg.content[1];
+		assert(imagePart?.type === "image");
+		expect(imagePart.mimeType).toBe("image/png");
+		expect(imagePart.data).toBe("iVBORw0KGgo=");
 	});
 
 	test("rejects unsupported image MIME types", () => {

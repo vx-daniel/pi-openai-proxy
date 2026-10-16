@@ -5,7 +5,7 @@
  * type coercion, and produces valid defaults.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { DEFAULT_CONFIG, normalizeConfig } from "@proxy/config/schema";
 
 describe("normalizeConfig", () => {

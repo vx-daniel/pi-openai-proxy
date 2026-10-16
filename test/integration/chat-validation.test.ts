@@ -5,9 +5,8 @@
  * without requiring actual API credentials.
  */
 
-import { beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "vite-plus/test";
 import { getAvailableModels, initRegistry } from "@proxy/pi/registry";
-
 import { isErrorBody, isErrorLike, jsonBody, testApp, testConfig } from "../helpers";
 
 let app: ReturnType<typeof testApp>;
@@ -175,7 +174,7 @@ describe("POST /v1/chat/completions - validation", () => {
 		});
 		const requestId = res.headers.get("x-request-id");
 		expect(requestId).toBeDefined();
-		expect(requestId).toStartWith("piproxy-");
+		expect(requestId).toMatch(/^piproxy-/);
 	});
 
 	test("echoes x-client-request-id", async () => {
@@ -309,14 +308,12 @@ describe("POST /v1/chat/completions - upstream API key override", () => {
 describe("unsupported endpoints", () => {
 	const endpoints = ["/v1/completions", "/v1/embeddings", "/v1/assistants"];
 
-	for (const endpoint of endpoints) {
-		test(`returns 404 for ${endpoint}`, async () => {
-			const res = await app.request(endpoint, { method: "POST" });
-			expect(res.status).toBe(404);
-			const body = await jsonBody(res);
-			expect(isErrorLike(body)).toBe(true);
-			if (!isErrorLike(body)) return;
-			expect(body.error.message).toContain("not supported");
-		});
-	}
+	test.each(endpoints)("returns 404 for %s", async (endpoint) => {
+		const res = await app.request(endpoint, { method: "POST" });
+		expect(res.status).toBe(404);
+		const body = await jsonBody(res);
+		expect(isErrorLike(body)).toBe(true);
+		if (!isErrorLike(body)) return;
+		expect(body.error.message).toContain("not supported");
+	});
 });

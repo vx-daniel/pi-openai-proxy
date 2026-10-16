@@ -10,8 +10,8 @@
  * - Resolution: public ID, canonical fallback, hidden model rejection
  */
 
-import { describe, expect, test } from "bun:test";
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { describe, expect, test } from "vite-plus/test";
 import type { ModelExposureConfig } from "@proxy/openai/model-exposure";
 import { computeModelExposure, resolveExposedModel } from "@proxy/openai/model-exposure";
 

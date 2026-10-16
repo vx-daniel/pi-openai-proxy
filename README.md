@@ -14,7 +14,7 @@ A local OpenAI-compatible HTTP proxy built on [pi](https://github.com/badlogic/p
 
 1. [pi](https://github.com/badlogic/pi-mono) must be installed
 2. At least one provider must be configured via `pi /login`
-3. [Bun](https://bun.sh) (for development) or [Node.js](https://nodejs.org) >= 20 (for production)
+3. [Node.js](https://nodejs.org) >= 24 (the same runtime pi uses)
 
 ## Installation
 
@@ -340,26 +340,25 @@ Requires Pi 1.x (`^1.3.0`). Pi 1.0 is the first release whose Anthropic client i
 
 ## Dev Workflow
 
+The toolchain is [Vite+](https://viteplus.dev) (`vp`); all config lives in `vite.config.ts`.
+
 ```bash
-pnpm install          # Install dependencies
-pnpm run dev          # Run in development
-pnpm run build        # Build for npm (tsdown)
-pnpm run typecheck    # TypeScript strict check
-pnpm run lint         # Biome + oxlint (strict)
-pnpm test             # Run all tests
+vp install            # Install dependencies (pnpm); also installs the Git hooks
+vp run dev            # Rebuild on change and restart the proxy
+vp check              # Format check, lint, and type check
+vp check --fix        # Format and apply lint fixes
+vp test               # Run all tests (conformance tests need provider credentials)
+vp run test:ci        # Unit and integration tests only
+vp pack               # Build for npm (ESM + .d.ts)
 ```
 
 ### Tooling
 
-- **pnpm** — package manager and script runner
-- **Bun** — runtime and test runner
-- **tsdown** — npm build (ESM + .d.ts)
-- **Biome** — format + lint
-- **oxlint** — type-aware lint with strict rules (`.oxlintrc.json`)
-- **lefthook** — pre-commit hooks (format, lint, typecheck), pre-push hooks (test)
-- **commitlint** — conventional commits
+- **Vite+** — one toolchain: Oxfmt (format), Oxlint with tsgolint (type-aware lint and type check), Vitest (tests), tsdown (`vp pack`), staged checks and Git hooks (`.vite-hooks/`)
+- **pnpm** — package manager, driven by `vp`
+- **Node.js** — runtime (`@hono/node-server`)
+- **commitlint** — conventional commits (`commit-msg` hook)
 - **semantic-release** — automated versioning and npm publish
-- **mise** — tool version management (node, bun)
 
 ## License
 

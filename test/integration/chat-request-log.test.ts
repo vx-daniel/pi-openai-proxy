@@ -6,12 +6,21 @@
  * the model resolves and before any upstream call, so nothing leaves the machine.
  */
 
-import { afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import {
+	afterEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	test,
+	type MockInstance,
+	vi,
+} from "vite-plus/test";
 import { getAvailableModels, initRegistry } from "@proxy/pi/registry";
 import { testApp } from "../helpers";
 
 let app: ReturnType<typeof testApp>;
-let errorSpy: ReturnType<typeof spyOn<Console, "error">>;
+let errorSpy: MockInstance<Console["error"]>;
 
 beforeAll(async () => {
 	await initRegistry();
@@ -19,7 +28,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
-	errorSpy = spyOn(console, "error").mockImplementation(() => undefined);
+	errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
 
 afterEach(() => {

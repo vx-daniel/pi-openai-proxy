@@ -62,6 +62,21 @@ const GOOGLE_APIS = new Set(["google-generative-ai", "google-gemini-cli", "googl
 // OpenAI-compatible payload fields
 // ---------------------------------------------------------------------------
 
+/** Request fields forwarded verbatim to OpenAI-compatible APIs, in payload order. */
+const OPENAI_PASSTHROUGH_FIELDS = [
+	"stop",
+	"user",
+	"top_p",
+	"frequency_penalty",
+	"presence_penalty",
+	"seed",
+	"response_format",
+	"tool_choice",
+	"parallel_tool_calls",
+	"metadata",
+	"prediction",
+] as const satisfies readonly (keyof ChatCompletionRequest)[];
+
 /**
  * Collect OpenAI-format fields for OpenAI-compatible APIs.
  * Fields are injected as flat top-level properties on the payload.
@@ -74,49 +89,12 @@ export function collectOpenAIPayloadFields(
 	const fields: Record<string, unknown> = {};
 	let hasFields = false;
 
-	if (request.stop !== undefined) {
-		fields["stop"] = request.stop;
-		hasFields = true;
-	}
-	if (request.user !== undefined) {
-		fields["user"] = request.user;
-		hasFields = true;
-	}
-	if (request.top_p !== undefined) {
-		fields["top_p"] = request.top_p;
-		hasFields = true;
-	}
-	if (request.frequency_penalty !== undefined) {
-		fields["frequency_penalty"] = request.frequency_penalty;
-		hasFields = true;
-	}
-	if (request.presence_penalty !== undefined) {
-		fields["presence_penalty"] = request.presence_penalty;
-		hasFields = true;
-	}
-	if (request.seed !== undefined) {
-		fields["seed"] = request.seed;
-		hasFields = true;
-	}
-	if (request.response_format !== undefined) {
-		fields["response_format"] = request.response_format;
-		hasFields = true;
-	}
-	if (request.tool_choice !== undefined) {
-		fields["tool_choice"] = request.tool_choice;
-		hasFields = true;
-	}
-	if (request.parallel_tool_calls !== undefined) {
-		fields["parallel_tool_calls"] = request.parallel_tool_calls;
-		hasFields = true;
-	}
-	if (request.metadata !== undefined) {
-		fields["metadata"] = request.metadata;
-		hasFields = true;
-	}
-	if (request.prediction !== undefined) {
-		fields["prediction"] = request.prediction;
-		hasFields = true;
+	for (const key of OPENAI_PASSTHROUGH_FIELDS) {
+		const value = request[key];
+		if (value !== undefined) {
+			fields[key] = value;
+			hasFields = true;
+		}
 	}
 
 	return hasFields ? fields : undefined;
@@ -264,57 +242,28 @@ export function patchGooglePayload(
 	payload: Record<string, unknown>,
 	request: ChatCompletionRequest,
 ): boolean {
-	let patched = false;
-
 	// Access or create config.generationConfig
 	const config = isRecord(payload["config"]) ? payload["config"] : undefined;
 	if (config === undefined) {
 		return false;
 	}
 
-	// Ensure generationConfig exists
-	let genConfig = isRecord(config["generationConfig"]) ? config["generationConfig"] : undefined;
-
-	if (request.top_p !== undefined) {
-		genConfig ??= {};
-		genConfig["topP"] = request.top_p;
-		patched = true;
-	}
-	if (request.stop !== undefined) {
-		genConfig ??= {};
-		const sequences = Array.isArray(request.stop) ? request.stop : [request.stop];
-		genConfig["stopSequences"] = sequences;
-		patched = true;
-	}
-	if (request.seed !== undefined) {
-		genConfig ??= {};
-		genConfig["seed"] = request.seed;
-		patched = true;
-	}
-	if (request.frequency_penalty !== undefined) {
-		genConfig ??= {};
-		genConfig["frequencyPenalty"] = request.frequency_penalty;
-		patched = true;
-	}
-	if (request.presence_penalty !== undefined) {
-		genConfig ??= {};
-		genConfig["presencePenalty"] = request.presence_penalty;
-		patched = true;
-	}
-
-	if (genConfig !== undefined && patched) {
+	let patched = false;
+	const genFields = collectGoogleGenerationFields(request);
+	if (Object.keys(genFields).length > 0) {
+		const genConfig = isRecord(config["generationConfig"]) ? config["generationConfig"] : {};
+		Object.assign(genConfig, genFields);
 		config["generationConfig"] = genConfig;
+		patched = true;
 	}
 
 	// Tool choice -> toolConfig.functionCallingConfig.mode
 	const mode = translateToolChoiceForGoogle(request.tool_choice);
 	if (mode !== undefined) {
-		let toolConfig = isRecord(config["toolConfig"]) ? config["toolConfig"] : undefined;
-		toolConfig ??= {};
-		let funcConfig = isRecord(toolConfig["functionCallingConfig"])
+		const toolConfig = isRecord(config["toolConfig"]) ? config["toolConfig"] : {};
+		const funcConfig = isRecord(toolConfig["functionCallingConfig"])
 			? toolConfig["functionCallingConfig"]
-			: undefined;
-		funcConfig ??= {};
+			: {};
 		funcConfig["mode"] = mode;
 		toolConfig["functionCallingConfig"] = funcConfig;
 		config["toolConfig"] = toolConfig;
@@ -322,6 +271,29 @@ export function patchGooglePayload(
 	}
 
 	return patched;
+}
+
+/**
+ * Collect Google generationConfig fields (camelCase) translated from the request.
+ */
+function collectGoogleGenerationFields(request: ChatCompletionRequest): Record<string, unknown> {
+	const fields: Record<string, unknown> = {};
+	if (request.top_p !== undefined) {
+		fields["topP"] = request.top_p;
+	}
+	if (request.stop !== undefined) {
+		fields["stopSequences"] = Array.isArray(request.stop) ? request.stop : [request.stop];
+	}
+	if (request.seed !== undefined) {
+		fields["seed"] = request.seed;
+	}
+	if (request.frequency_penalty !== undefined) {
+		fields["frequencyPenalty"] = request.frequency_penalty;
+	}
+	if (request.presence_penalty !== undefined) {
+		fields["presencePenalty"] = request.presence_penalty;
+	}
+	return fields;
 }
 
 // ---------------------------------------------------------------------------

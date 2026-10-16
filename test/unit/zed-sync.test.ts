@@ -10,11 +10,11 @@
  * - Edge cases: missing provider block, empty models, malformed JSONC
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
 import type { ExposedModel } from "@proxy/openai/model-exposure";
 import { findZedSettings, syncToZed, toZedModel } from "@proxy/sync/zed";
 
@@ -127,7 +127,6 @@ describe("toZedModel", () => {
 
 describe("findZedSettings", () => {
 	let tempDir: string;
-	const savedEnv: Record<string, string | undefined> = {};
 
 	beforeEach(() => {
 		tempDir = resolve(
@@ -135,22 +134,10 @@ describe("findZedSettings", () => {
 			`zed-sync-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 		);
 		mkdirSync(tempDir, { recursive: true });
-
-		// Save env vars we will modify
-		savedEnv["CUSTOM_DATA_DIR"] = process.env.CUSTOM_DATA_DIR;
-		savedEnv["HOME"] = process.env.HOME;
-		savedEnv["XDG_CONFIG_HOME"] = process.env.XDG_CONFIG_HOME;
 	});
 
 	afterEach(() => {
-		// Restore env vars
-		for (const [key, value] of Object.entries(savedEnv)) {
-			if (value === undefined) {
-				process.env[key] = undefined;
-			} else {
-				process.env[key] = value;
-			}
-		}
+		vi.unstubAllEnvs();
 		rmSync(tempDir, { recursive: true, force: true });
 	});
 
@@ -159,42 +146,42 @@ describe("findZedSettings", () => {
 		mkdirSync(customDir, { recursive: true });
 		writeFileSync(resolve(customDir, "settings.json"), "{}");
 
-		process.env.CUSTOM_DATA_DIR = customDir;
+		vi.stubEnv("CUSTOM_DATA_DIR", customDir);
 		// Clear others to isolate
-		process.env.HOME = undefined;
-		process.env.XDG_CONFIG_HOME = undefined;
+		vi.stubEnv("HOME", undefined);
+		vi.stubEnv("XDG_CONFIG_HOME", undefined);
 
 		expect(findZedSettings()).toBe(resolve(customDir, "settings.json"));
 	});
 
 	test("falls back to HOME/.config/zed when CUSTOM_DATA_DIR is unset", () => {
-		process.env.CUSTOM_DATA_DIR = undefined;
+		vi.stubEnv("CUSTOM_DATA_DIR", undefined);
 		const zedDir = resolve(tempDir, ".config", "zed");
 		mkdirSync(zedDir, { recursive: true });
 		writeFileSync(resolve(zedDir, "settings.json"), "{}");
 
-		process.env.HOME = tempDir;
-		process.env.XDG_CONFIG_HOME = undefined;
+		vi.stubEnv("HOME", tempDir);
+		vi.stubEnv("XDG_CONFIG_HOME", undefined);
 
 		expect(findZedSettings()).toBe(resolve(zedDir, "settings.json"));
 	});
 
 	test("falls back to XDG_CONFIG_HOME when HOME config does not exist", () => {
-		process.env.CUSTOM_DATA_DIR = undefined;
-		process.env.HOME = resolve(tempDir, "no-such-home");
+		vi.stubEnv("CUSTOM_DATA_DIR", undefined);
+		vi.stubEnv("HOME", resolve(tempDir, "no-such-home"));
 
 		const xdgDir = resolve(tempDir, "xdg-config", "zed");
 		mkdirSync(xdgDir, { recursive: true });
 		writeFileSync(resolve(xdgDir, "settings.json"), "{}");
-		process.env.XDG_CONFIG_HOME = resolve(tempDir, "xdg-config");
+		vi.stubEnv("XDG_CONFIG_HOME", resolve(tempDir, "xdg-config"));
 
 		expect(findZedSettings()).toBe(resolve(xdgDir, "settings.json"));
 	});
 
 	test("returns undefined when no config found", () => {
-		process.env.CUSTOM_DATA_DIR = undefined;
-		process.env.HOME = resolve(tempDir, "no-such-home");
-		process.env.XDG_CONFIG_HOME = undefined;
+		vi.stubEnv("CUSTOM_DATA_DIR", undefined);
+		vi.stubEnv("HOME", resolve(tempDir, "no-such-home"));
+		vi.stubEnv("XDG_CONFIG_HOME", undefined);
 
 		expect(findZedSettings()).toBeUndefined();
 	});
@@ -208,8 +195,8 @@ describe("findZedSettings", () => {
 		mkdirSync(homeZedDir, { recursive: true });
 		writeFileSync(resolve(homeZedDir, "settings.json"), "{}");
 
-		process.env.CUSTOM_DATA_DIR = customDir;
-		process.env.HOME = tempDir;
+		vi.stubEnv("CUSTOM_DATA_DIR", customDir);
+		vi.stubEnv("HOME", tempDir);
 
 		expect(findZedSettings()).toBe(resolve(customDir, "settings.json"));
 	});
@@ -222,7 +209,6 @@ describe("findZedSettings", () => {
 describe("syncToZed", () => {
 	let tempDir: string;
 	let settingsPath: string;
-	const savedEnv: Record<string, string | undefined> = {};
 
 	beforeEach(() => {
 		tempDir = resolve(
@@ -233,24 +219,14 @@ describe("syncToZed", () => {
 		mkdirSync(zedDir, { recursive: true });
 		settingsPath = resolve(zedDir, "settings.json");
 
-		savedEnv["HOME"] = process.env.HOME;
-		savedEnv["CUSTOM_DATA_DIR"] = process.env.CUSTOM_DATA_DIR;
-		savedEnv["XDG_CONFIG_HOME"] = process.env.XDG_CONFIG_HOME;
-
 		// Point findZedSettings to our temp dir
-		process.env.CUSTOM_DATA_DIR = undefined;
-		process.env.XDG_CONFIG_HOME = undefined;
-		process.env.HOME = tempDir;
+		vi.stubEnv("CUSTOM_DATA_DIR", undefined);
+		vi.stubEnv("XDG_CONFIG_HOME", undefined);
+		vi.stubEnv("HOME", tempDir);
 	});
 
 	afterEach(() => {
-		for (const [key, value] of Object.entries(savedEnv)) {
-			if (value === undefined) {
-				process.env[key] = undefined;
-			} else {
-				process.env[key] = value;
-			}
-		}
+		vi.unstubAllEnvs();
 		rmSync(tempDir, { recursive: true, force: true });
 	});
 
@@ -413,7 +389,7 @@ describe("syncToZed", () => {
 
 	test("returns error when settings file not found", () => {
 		// Point HOME to non-existent dir
-		process.env.HOME = resolve(tempDir, "no-such-dir");
+		vi.stubEnv("HOME", resolve(tempDir, "no-such-dir"));
 
 		const result = syncToZed([makeExposed()], {
 			providerName: "Pi Proxy",

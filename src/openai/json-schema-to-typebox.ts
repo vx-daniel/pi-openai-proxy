@@ -24,8 +24,8 @@
  * - if/then/else
  */
 
-import { isRecord } from "@proxy/utils/guards";
 import { type TSchema, Type } from "typebox";
+import { isRecord } from "@proxy/utils/guards";
 
 export interface SchemaConversionSuccess {
 	readonly ok: true;
@@ -55,12 +55,15 @@ const REJECTED_KEYWORDS = [
 	"not",
 ] as const;
 
+const MAX_ANY_OF_BRANCHES = 10;
+const NULLABLE_TYPE_ARRAY_LENGTH = 2;
+
 /**
  * Convert a JSON Schema object to a TypeBox TSchema.
  *
  * Returns a ConversionError for unsupported constructs.
  */
-export function jsonSchemaToTypebox(schema: unknown, path: string = ""): SchemaConversionResult {
+export function jsonSchemaToTypebox(schema: unknown, path = ""): SchemaConversionResult {
 	if (!isRecord(schema)) {
 		return {
 			ok: false,
@@ -69,15 +72,9 @@ export function jsonSchemaToTypebox(schema: unknown, path: string = ""): SchemaC
 		};
 	}
 
-	// Check for rejected keywords
-	for (const keyword of REJECTED_KEYWORDS) {
-		if (schema[keyword] !== undefined) {
-			return {
-				ok: false,
-				message: `Unsupported JSON Schema keyword '${keyword}' at ${path || "root"}`,
-				path,
-			};
-		}
+	const rejected = findRejectedKeyword(schema, path);
+	if (rejected !== undefined) {
+		return rejected;
 	}
 
 	const description = typeof schema["description"] === "string" ? schema["description"] : undefined;
@@ -108,20 +105,56 @@ export function jsonSchemaToTypebox(schema: unknown, path: string = ""): SchemaC
 	}
 
 	if (typeof rawType !== "string") {
-		// No type specified -- treat as an unconstrained schema if it's an empty object
-		if (
-			Object.keys(schema).length === 0 ||
-			(Object.keys(schema).length === 1 && description !== undefined)
-		) {
-			return { ok: true, schema: Type.Unknown(opts) };
-		}
-		return {
-			ok: false,
-			message: `Missing or invalid 'type' at ${path || "root"}`,
-			path,
-		};
+		return convertUntyped(schema, description, path, opts);
 	}
 
+	return convertTyped(rawType, schema, path, opts);
+}
+
+function findRejectedKeyword(
+	schema: Record<string, unknown>,
+	path: string,
+): SchemaConversionResult | undefined {
+	for (const keyword of REJECTED_KEYWORDS) {
+		if (schema[keyword] !== undefined) {
+			return {
+				ok: false,
+				message: `Unsupported JSON Schema keyword '${keyword}' at ${path || "root"}`,
+				path,
+			};
+		}
+	}
+	return undefined;
+}
+
+/**
+ * No type specified -- treat as an unconstrained schema if it's an empty object.
+ */
+function convertUntyped(
+	schema: Record<string, unknown>,
+	description: string | undefined,
+	path: string,
+	opts: Record<string, unknown>,
+): SchemaConversionResult {
+	if (
+		Object.keys(schema).length === 0 ||
+		(Object.keys(schema).length === 1 && description !== undefined)
+	) {
+		return { ok: true, schema: Type.Unknown(opts) };
+	}
+	return {
+		ok: false,
+		message: `Missing or invalid 'type' at ${path || "root"}`,
+		path,
+	};
+}
+
+function convertTyped(
+	rawType: string,
+	schema: Record<string, unknown>,
+	path: string,
+	opts: Record<string, unknown>,
+): SchemaConversionResult {
 	switch (rawType) {
 		case "object":
 			return convertObject(schema, path, opts);
@@ -161,7 +194,7 @@ function convertAnyOf(
 	if (branches.length === 0) {
 		return { ok: false, message: `Empty 'anyOf' at ${path || "root"}`, path };
 	}
-	if (branches.length > 10) {
+	if (branches.length > MAX_ANY_OF_BRANCHES) {
 		return {
 			ok: false,
 			message: `'anyOf' with more than 10 branches is not supported at ${path || "root"}`,
@@ -217,7 +250,7 @@ function convertNullableType(
 	opts: Record<string, unknown>,
 ): SchemaConversionResult {
 	const nonNullTypes = typeArray.filter((t) => t !== "null");
-	if (nonNullTypes.length !== 1 || typeArray.length !== 2) {
+	if (nonNullTypes.length !== 1 || typeArray.length !== NULLABLE_TYPE_ARRAY_LENGTH) {
 		return {
 			ok: false,
 			message: `Only [type, "null"] nullable types are supported at ${path || "root"}`,

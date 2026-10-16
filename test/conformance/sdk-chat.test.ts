@@ -6,7 +6,7 @@
  * Skips when no credentials are available.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { createTestClient, getCheapestModel, setup } from "./helpers";
 
 describe("SDK non-streaming chat conformance", () => {
@@ -24,8 +24,8 @@ describe("SDK non-streaming chat conformance", () => {
 		});
 
 		expect(completion.object).toBe("chat.completion");
-		expect(completion.id).toBeString();
-		expect(completion.created).toBeNumber();
+		expect(completion.id).toBeTypeOf("string");
+		expect(completion.created).toBeTypeOf("number");
 		expect(completion.choices.length).toBe(1);
 
 		const choice = completion.choices[0];
@@ -34,8 +34,8 @@ describe("SDK non-streaming chat conformance", () => {
 		expect(choice?.finish_reason).not.toBeNull();
 
 		expect(completion.usage).toBeDefined();
-		expect(completion.usage?.prompt_tokens).toBeNumber();
-		expect(completion.usage?.completion_tokens).toBeNumber();
-		expect(completion.usage?.total_tokens).toBeNumber();
+		expect(completion.usage?.prompt_tokens).toBeTypeOf("number");
+		expect(completion.usage?.completion_tokens).toBeTypeOf("number");
+		expect(completion.usage?.total_tokens).toBeTypeOf("number");
 	});
 });

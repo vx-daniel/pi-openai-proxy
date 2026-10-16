@@ -6,8 +6,8 @@
  * Skips when no credentials are available.
  */
 
-import { describe, expect, test } from "bun:test";
 import type OpenAI from "openai";
+import { assert, describe, expect, test } from "vite-plus/test";
 import { createTestClient, getTestModels, setup } from "./helpers";
 
 const weatherTool: OpenAI.ChatCompletionTool = {
@@ -54,22 +54,19 @@ describe("SDK tool call conformance", () => {
 		expect(choice).toBeDefined();
 
 		// Model may or may not use the tool -- validate shape if it did
-		if (choice?.finish_reason === "tool_calls") {
-			expect(choice.message.tool_calls).toBeDefined();
-			expect(choice.message.tool_calls?.length).toBeGreaterThan(0);
+		const usedTool = choice?.finish_reason === "tool_calls";
+		const toolCalls = usedTool ? (choice.message.tool_calls ?? []) : [];
+		expect(toolCalls.length > 0).toBe(usedTool);
 
-			const tc = choice.message.tool_calls?.[0];
-			expect(tc).toBeDefined();
-			expect(tc?.id).toBeString();
-			expect(tc?.type).toBe("function");
-
-			if (tc !== undefined && tc.type === "function") {
-				expect(tc.function.name).toBeString();
-				expect(tc.function.arguments).toBeString();
-				expect(() => {
-					JSON.parse(tc.function.arguments);
-				}).not.toThrow();
-			}
+		for (const tc of toolCalls.slice(0, 1)) {
+			expect(tc.id).toBeTypeOf("string");
+			expect(tc.type).toBe("function");
+			assert(tc.type === "function");
+			expect(tc.function.name).toBeTypeOf("string");
+			expect(tc.function.arguments).toBeTypeOf("string");
+			expect(() => {
+				JSON.parse(tc.function.arguments);
+			}).not.toThrow();
 		}
 	});
 

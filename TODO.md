@@ -377,6 +377,11 @@ Analysis document: `docs/engineering/phase-3d-analysis.md`
 ## Fork maintenance [DONE]
 
 - [x] Add a `chat_request` log line naming the requested and the resolved model of each chat request (idea from laixintao/pi-openai-proxy, implemented independently)
+- [x] Replace Biome, standalone Oxlint, tsdown, `bun test`, `tsc`, lefthook, and mise with Vite+ (`vite.config.ts`, `.vite-hooks/`)
+- [x] Port Biome-only rules to Oxlint (built-ins plus `lint/repo-rules.ts`)
+- [x] Copy the Viaanix oxc-config v4.0.0 rules into `vite.config.ts` and make the code pass them (extension split into `extensions/proxy/`)
+- [x] Run the proxy on Node (`@hono/node-server`); the extension spawns it with pi's own runtime
+- [x] Remove stale `.specify/` scaffolding and `NEXT.md`
 
 ## Phase 4 — Experimental agentic mode
 

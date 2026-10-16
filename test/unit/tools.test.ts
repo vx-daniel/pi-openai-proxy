@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { convertTools } from "@proxy/openai/tools";
 
 function schemaValue(schema: unknown, key: string): unknown {

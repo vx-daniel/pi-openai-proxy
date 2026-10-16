@@ -59,6 +59,161 @@ export function encodeDone(): string {
 	return "data: [DONE]\n\n";
 }
 
+const MS_PER_SECOND = 1000;
+
+interface ChunkMeta {
+	readonly id: string;
+	readonly created: number;
+	readonly model: string;
+}
+
+interface StreamState {
+	sentFirstChunk: boolean;
+	finishReason: string | null;
+	finalUsage: Usage | undefined;
+	terminated: boolean;
+	// Track tool call indexes for stable delta sequencing
+	readonly toolCallIndexes: Map<number, boolean>;
+}
+
+function encodeChoiceChunk(
+	meta: ChunkMeta,
+	delta: SSEChunkDelta,
+	finishReason: string | null = null,
+): string {
+	return encodeSSE({
+		id: meta.id,
+		object: "chat.completion.chunk",
+		created: meta.created,
+		model: meta.model,
+		choices: [
+			{
+				index: 0,
+				delta,
+				finish_reason: finishReason,
+			},
+		],
+	});
+}
+
+function encodeTextDelta(meta: ChunkMeta, state: StreamState, text: string): string {
+	if (state.sentFirstChunk) {
+		return encodeChoiceChunk(meta, { content: text });
+	}
+	state.sentFirstChunk = true;
+	return encodeChoiceChunk(meta, { role: "assistant", content: text });
+}
+
+function encodeToolCallStart(
+	meta: ChunkMeta,
+	state: StreamState,
+	event: Extract<AssistantMessageEvent, { type: "toolcall_start" }>,
+): string[] {
+	const ci = event.contentIndex;
+	const toolCallContent = event.partial.content[ci];
+	if (toolCallContent === undefined || toolCallContent.type !== "toolCall") {
+		return [];
+	}
+	// Determine the tool call index within the message's tool calls
+	const tcIndex = state.toolCallIndexes.size;
+	state.toolCallIndexes.set(ci, true);
+	return [
+		encodeChoiceChunk(meta, {
+			tool_calls: [
+				{
+					index: tcIndex,
+					id: toolCallContent.id,
+					type: "function",
+					function: {
+						name: toolCallContent.name,
+						arguments: "",
+					},
+				},
+			],
+		}),
+	];
+}
+
+function encodeToolCallDelta(
+	meta: ChunkMeta,
+	state: StreamState,
+	contentIndex: number,
+	delta: string,
+): string[] {
+	// Find the tool call index
+	let tcIndex = 0;
+	for (const [ci] of state.toolCallIndexes) {
+		if (ci === contentIndex) {
+			return [
+				encodeChoiceChunk(meta, {
+					tool_calls: [
+						{
+							index: tcIndex,
+							function: {
+								arguments: delta,
+							},
+						},
+					],
+				}),
+			];
+		}
+		tcIndex++;
+	}
+	return [];
+}
+
+function encodeUpstreamError(errorMessage: string | undefined): string[] {
+	// Surface upstream errors as SSE error frames instead of silent stop.
+	// Write an error data frame so the client sees the failure.
+	const errorChunk = JSON.stringify({
+		error: {
+			message: errorMessage ?? "Upstream provider error",
+			type: "server_error",
+			param: null,
+			code: "upstream_error",
+		},
+	});
+	return [`data: ${errorChunk}\n\n`, encodeDone()];
+}
+
+/**
+ * Map one pi event to the SSE frames it produces, updating stream state.
+ */
+function eventToFrames(
+	event: AssistantMessageEvent,
+	meta: ChunkMeta,
+	state: StreamState,
+): string[] {
+	switch (event.type) {
+		case "start":
+			// Emit the first chunk with role
+			state.sentFirstChunk = true;
+			return [encodeChoiceChunk(meta, { role: "assistant" })];
+		case "text_delta":
+			return [encodeTextDelta(meta, state, event.delta)];
+		case "toolcall_start":
+			return encodeToolCallStart(meta, state, event);
+		case "toolcall_delta":
+			return encodeToolCallDelta(meta, state, event.contentIndex, event.delta);
+		case "done":
+			state.finishReason = mapFinishReason(event.reason);
+			state.finalUsage = event.message.usage;
+			return [];
+		case "error":
+			state.terminated = true;
+			return encodeUpstreamError(event.error.errorMessage);
+		// Not mapped to SSE output in the stable path.
+		case "text_start":
+		case "text_end":
+		case "thinking_start":
+		case "thinking_delta":
+		case "thinking_end":
+		case "toolcall_end":
+			break;
+	}
+	return [];
+}
+
 /**
  * Create an async generator that yields SSE text frames from a pi event stream.
  */
@@ -68,200 +223,34 @@ export async function* streamToSSE(
 	model: string,
 	includeUsage: boolean,
 ): AsyncGenerator<string> {
-	const created = Math.floor(Date.now() / 1000);
-	let sentFirstChunk = false;
-	let finishReason: string | null = null;
-	let finalUsage: Usage | undefined;
-
-	// Track tool call indexes for stable delta sequencing
-	const toolCallIndexes = new Map<number, boolean>();
+	const meta: ChunkMeta = { id: requestId, created: Math.floor(Date.now() / MS_PER_SECOND), model };
+	const state: StreamState = {
+		sentFirstChunk: false,
+		finishReason: null,
+		finalUsage: undefined,
+		terminated: false,
+		toolCallIndexes: new Map<number, boolean>(),
+	};
 
 	for await (const event of events) {
-		switch (event.type) {
-			case "start": {
-				// Emit the first chunk with role
-				yield encodeSSE({
-					id: requestId,
-					object: "chat.completion.chunk",
-					created,
-					model,
-					choices: [
-						{
-							index: 0,
-							delta: { role: "assistant" },
-							finish_reason: null,
-						},
-					],
-				});
-				sentFirstChunk = true;
-				break;
-			}
-
-			case "text_delta": {
-				if (!sentFirstChunk) {
-					yield encodeSSE({
-						id: requestId,
-						object: "chat.completion.chunk",
-						created,
-						model,
-						choices: [
-							{
-								index: 0,
-								delta: { role: "assistant", content: event.delta },
-								finish_reason: null,
-							},
-						],
-					});
-					sentFirstChunk = true;
-				} else {
-					yield encodeSSE({
-						id: requestId,
-						object: "chat.completion.chunk",
-						created,
-						model,
-						choices: [
-							{
-								index: 0,
-								delta: { content: event.delta },
-								finish_reason: null,
-							},
-						],
-					});
-				}
-				break;
-			}
-
-			case "toolcall_start": {
-				const ci = event.contentIndex;
-				const toolCallContent = event.partial.content[ci];
-				if (toolCallContent !== undefined && toolCallContent.type === "toolCall") {
-					// Determine the tool call index within the message's tool calls
-					const tcIndex = toolCallIndexes.size;
-					toolCallIndexes.set(ci, true);
-
-					yield encodeSSE({
-						id: requestId,
-						object: "chat.completion.chunk",
-						created,
-						model,
-						choices: [
-							{
-								index: 0,
-								delta: {
-									tool_calls: [
-										{
-											index: tcIndex,
-											id: toolCallContent.id,
-											type: "function",
-											function: {
-												name: toolCallContent.name,
-												arguments: "",
-											},
-										},
-									],
-								},
-								finish_reason: null,
-							},
-						],
-					});
-				}
-				break;
-			}
-
-			case "toolcall_delta": {
-				// Find the tool call index
-				let tcIndex = 0;
-				let found = false;
-				for (const [ci] of toolCallIndexes) {
-					if (ci === event.contentIndex) {
-						found = true;
-						break;
-					}
-					tcIndex++;
-				}
-				if (!found) break;
-
-				yield encodeSSE({
-					id: requestId,
-					object: "chat.completion.chunk",
-					created,
-					model,
-					choices: [
-						{
-							index: 0,
-							delta: {
-								tool_calls: [
-									{
-										index: tcIndex,
-										function: {
-											arguments: event.delta,
-										},
-									},
-								],
-							},
-							finish_reason: null,
-						},
-					],
-				});
-				break;
-			}
-
-			case "done": {
-				finishReason = mapFinishReason(event.reason);
-				finalUsage = event.message.usage;
-				break;
-			}
-
-			case "error": {
-				// Surface upstream errors as SSE error frames instead of silent stop.
-				// Write an error data frame so the client sees the failure.
-				const errorMessage = event.error.errorMessage ?? "Upstream provider error";
-				const errorChunk = JSON.stringify({
-					error: {
-						message: errorMessage,
-						type: "server_error",
-						param: null,
-						code: "upstream_error",
-					},
-				});
-				yield `data: ${errorChunk}\n\n`;
-				yield encodeDone();
-				return;
-			}
-
-			// text_start, text_end, thinking_start, thinking_delta, thinking_end, toolcall_end:
-			// Not mapped to SSE output in the stable path.
-			default:
-				break;
-		}
+		yield* eventToFrames(event, meta, state);
+		if (state.terminated) return;
 	}
 
 	// Emit final chunk with finish_reason
-	if (finishReason !== null) {
-		yield encodeSSE({
-			id: requestId,
-			object: "chat.completion.chunk",
-			created,
-			model,
-			choices: [
-				{
-					index: 0,
-					delta: {},
-					finish_reason: finishReason,
-				},
-			],
-		});
+	if (state.finishReason !== null) {
+		yield encodeChoiceChunk(meta, {}, state.finishReason);
 	}
 
 	// Emit usage chunk if requested
-	if (includeUsage && finalUsage !== undefined) {
+	if (includeUsage && state.finalUsage !== undefined) {
 		yield encodeSSE({
 			id: requestId,
 			object: "chat.completion.chunk",
-			created,
+			created: meta.created,
 			model,
 			choices: [],
-			usage: mapUsage(finalUsage),
+			usage: mapUsage(state.finalUsage),
 		});
 	}
 

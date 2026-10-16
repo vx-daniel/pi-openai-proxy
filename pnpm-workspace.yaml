@@ -1,6 +1,16 @@
 allowBuilds:
-  '@google/genai': true
+  "@google/genai": true
   koffi: true
   protobufjs: true
-  lefthook: true
   esbuild: true
+  lefthook: set this to true or false
+catalog:
+  vite: npm:@voidzero-dev/vite-plus-core@1.2.0
+  vite-plus: 1.2.0
+overrides:
+  vite@*: "catalog:"
+peerDependencyRules:
+  allowAny:
+    - vite
+  allowedVersions:
+    vite: "*"

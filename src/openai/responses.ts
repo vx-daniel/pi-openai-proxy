@@ -15,6 +15,8 @@ import type {
 	Usage,
 } from "@earendil-works/pi-ai";
 
+const MS_PER_SECOND = 1000;
+
 export interface OpenAIUsage {
 	readonly prompt_tokens: number;
 	readonly completion_tokens: number;
@@ -95,8 +97,8 @@ export function mapFinishReason(reason: StopReason): string {
  * Agent does) saw about 0.04% of the real context.
  */
 export function mapUsage(usage: Usage): OpenAIUsage {
-	const cacheReadTokens = usage.cacheRead ?? 0;
-	const cacheWriteTokens = usage.cacheWrite ?? 0;
+	const cacheReadTokens = usage.cacheRead;
+	const cacheWriteTokens = usage.cacheWrite;
 	return {
 		prompt_tokens: usage.input + cacheReadTokens + cacheWriteTokens,
 		completion_tokens: usage.output,
@@ -139,7 +141,7 @@ export function buildChatCompletion(
 	return {
 		id: requestId,
 		object: "chat.completion",
-		created: Math.floor(Date.now() / 1000),
+		created: Math.floor(Date.now() / MS_PER_SECOND),
 		model: canonicalModelId,
 		system_fingerprint: null,
 		choices: [

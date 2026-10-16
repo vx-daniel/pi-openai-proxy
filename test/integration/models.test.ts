@@ -5,9 +5,8 @@
  * Only available (auth-configured) models are exposed through the API.
  */
 
-import { beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "vite-plus/test";
 import { getAvailableModels, initRegistry } from "@proxy/pi/registry";
-
 import { isErrorBody, isModelListBody, isModelObject, jsonBody, testApp } from "../helpers";
 
 let app: ReturnType<typeof testApp>;
@@ -27,14 +26,12 @@ describe("GET /v1/models", () => {
 		if (!isModelListBody(body)) return;
 
 		expect(body.object).toBe("list");
-		expect(body.data).toBeArray();
+		expect(body.data).toBeInstanceOf(Array);
 
-		if (body.data.length > 0) {
-			const first = body.data[0];
-			if (first === undefined) return;
+		for (const first of body.data.slice(0, 1)) {
 			expect(first.object).toBe("model");
 			expect(first.owned_by).toBeDefined();
-			expect(first.created).toBeNumber();
+			expect(first.created).toBeTypeOf("number");
 		}
 	});
 
@@ -61,8 +58,8 @@ describe("GET /v1/models", () => {
 
 		expect(body.id).toBe(publicId);
 		expect(body.object).toBe("model");
-		expect(body.created).toBeNumber();
-		expect(body.owned_by).toBeString();
+		expect(body.created).toBeTypeOf("number");
+		expect(body.owned_by).toBeTypeOf("string");
 	});
 });
 

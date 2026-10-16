@@ -5,7 +5,6 @@
  * ChatCompletion contract the official SDK expects.
  */
 
-import { describe, expect, test } from "bun:test";
 import type {
 	AssistantMessage,
 	JsonObject,
@@ -13,6 +12,7 @@ import type {
 	ToolCall,
 	Usage,
 } from "@earendil-works/pi-ai";
+import { describe, expect, test } from "vite-plus/test";
 import { buildChatCompletion } from "@proxy/openai/responses";
 
 // ---------------------------------------------------------------------------
@@ -78,10 +78,10 @@ describe("non-streaming response conformance", () => {
 
 		expect(result.id).toBe("req-1");
 		expect(result.object).toBe("chat.completion");
-		expect(result.created).toBeNumber();
+		expect(result.created).toBeTypeOf("number");
 		expect(result.created).toBeGreaterThan(0);
 		expect(result.model).toBe("openai/gpt-4o");
-		expect(result.choices).toBeArray();
+		expect(result.choices).toBeInstanceOf(Array);
 		expect(result.choices.length).toBe(1);
 		expect(result.usage).toBeDefined();
 	});
@@ -119,7 +119,7 @@ describe("non-streaming response conformance", () => {
 	test("content is string for text responses", () => {
 		const result = buildChatCompletion("req-4", "m", makeTextMessage("Hello world"));
 		const content = result.choices[0]?.message.content;
-		expect(content).toBeString();
+		expect(content).toBeTypeOf("string");
 		expect(content).toBe("Hello world");
 	});
 
@@ -145,9 +145,9 @@ describe("non-streaming response conformance", () => {
 		const first = toolCalls?.[0];
 		expect(first?.id).toBe("call_abc");
 		expect(first?.type).toBe("function");
-		expect(first?.function.name).toBeString();
+		expect(first?.function.name).toBeTypeOf("string");
 		expect(first?.function.name).toBe("get_weather");
-		expect(first?.function.arguments).toBeString();
+		expect(first?.function.arguments).toBeTypeOf("string");
 		// arguments must be a JSON string, not an object
 		expect(JSON.parse(first?.function.arguments ?? "")).toEqual({ city: "NYC" });
 	});
@@ -163,9 +163,9 @@ describe("non-streaming response conformance", () => {
 		});
 		const result = buildChatCompletion("req-8", "m", msg);
 
-		expect(result.usage.prompt_tokens).toBeNumber();
-		expect(result.usage.completion_tokens).toBeNumber();
-		expect(result.usage.total_tokens).toBeNumber();
+		expect(result.usage.prompt_tokens).toBeTypeOf("number");
+		expect(result.usage.completion_tokens).toBeTypeOf("number");
+		expect(result.usage.total_tokens).toBeTypeOf("number");
 		expect(result.usage.prompt_tokens).toBe(15);
 		expect(result.usage.completion_tokens).toBe(25);
 		expect(result.usage.total_tokens).toBe(40);

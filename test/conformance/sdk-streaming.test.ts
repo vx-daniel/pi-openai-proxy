@@ -6,7 +6,8 @@
  * Skips when no credentials are available.
  */
 
-import { describe, expect, test } from "bun:test";
+import type OpenAI from "openai";
+import { describe, expect, test } from "vite-plus/test";
 import { createTestClient, getCheapestModel, setup } from "./helpers";
 
 describe("SDK streaming chat conformance", () => {
@@ -30,8 +31,8 @@ describe("SDK streaming chat conformance", () => {
 		for await (const chunk of stream) {
 			chunkCount++;
 			expect(chunk.object).toBe("chat.completion.chunk");
-			expect(chunk.id).toBeString();
-			expect(chunk.created).toBeNumber();
+			expect(chunk.id).toBeTypeOf("string");
+			expect(chunk.created).toBeTypeOf("number");
 
 			if (chunk.choices.length > 0) {
 				const choice = chunk.choices[0];
@@ -60,17 +61,19 @@ describe("SDK streaming chat conformance", () => {
 			stream_options: { include_usage: true },
 		});
 
-		let sawUsageChunk = false;
+		const usages: OpenAI.CompletionUsage[] = [];
 
 		for await (const chunk of stream) {
 			if (chunk.usage !== undefined && chunk.usage !== null) {
-				sawUsageChunk = true;
-				expect(chunk.usage.prompt_tokens).toBeNumber();
-				expect(chunk.usage.completion_tokens).toBeNumber();
-				expect(chunk.usage.total_tokens).toBeNumber();
+				usages.push(chunk.usage);
 			}
 		}
 
-		expect(sawUsageChunk).toBe(true);
+		expect(usages.length).toBeGreaterThan(0);
+		for (const usage of usages) {
+			expect(usage.prompt_tokens).toBeTypeOf("number");
+			expect(usage.completion_tokens).toBeTypeOf("number");
+			expect(usage.total_tokens).toBeTypeOf("number");
+		}
 	});
 });

@@ -5,8 +5,8 @@
  * and skip utilities for when no API credentials are available.
  */
 
-import { getAvailableModels, initRegistry } from "@proxy/pi/registry";
 import OpenAI from "openai";
+import { getAvailableModels, initRegistry } from "@proxy/pi/registry";
 import { testApp } from "../helpers";
 
 let initialized = false;
@@ -97,6 +97,12 @@ export function getCheapestModel(): TestModel | undefined {
 	return getTestModels()[0];
 }
 
+function requestUrl(input: string | URL | Request): string {
+	if (typeof input === "string") return input;
+	if (input instanceof URL) return input.href;
+	return input.url;
+}
+
 /**
  * Create an OpenAI SDK client that sends requests through the Hono test app.
  *
@@ -116,7 +122,7 @@ export function createTestClient(proxyApp: ReturnType<typeof testApp>): OpenAI {
 		baseURL: "http://localhost:4141/v1",
 		maxRetries: 0,
 		fetch: async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+			const url = requestUrl(input);
 			const path = new URL(url).pathname;
 			const method = init?.method ?? "GET";
 			const headers = init?.headers ?? {};

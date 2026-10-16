@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
 import type { AssistantMessage, AssistantMessageEvent } from "@earendil-works/pi-ai";
+import { describe, expect, test } from "vite-plus/test";
 import { encodeDone, encodeSSE, streamToSSE } from "@proxy/openai/sse";
 
 describe("encodeSSE", () => {
@@ -19,8 +19,8 @@ describe("encodeSSE", () => {
 		};
 
 		const result = encodeSSE(chunk);
-		expect(result).toStartWith("data: ");
-		expect(result).toEndWith("\n\n");
+		expect(result).toMatch(/^data: /);
+		expect(result).toMatch(/\n\n$/);
 
 		const parsed = JSON.parse(result.slice(6));
 		expect(parsed.id).toBe("req-1");
@@ -79,7 +79,7 @@ describe("streamToSSE", () => {
 
 		// Should have error data frame + [DONE]
 		expect(frames).toHaveLength(2);
-		expect(frames[0]).toStartWith("data: ");
+		expect(frames[0]).toMatch(/^data: /);
 		expect(frames[1]).toBe("data: [DONE]\n\n");
 
 		// Error frame should contain the error message
