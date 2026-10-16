@@ -11,3 +11,5 @@ dist/
 
 .codegraph/
 .local/
+# j5 workflow output (local review and audit reports)
+.j5/
