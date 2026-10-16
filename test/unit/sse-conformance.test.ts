@@ -65,8 +65,8 @@ function makePartial(content: unknown[] = []): AssistantMessage {
 }
 
 async function* mockEvents(events: AssistantMessageEvent[]): AsyncGenerator<AssistantMessageEvent> {
-  for (const e of events) {
-    yield e
+  for (const event of events) {
+    yield event
   }
 }
 
@@ -87,9 +87,9 @@ async function collectFrames(
  * or null for non-data frames.
  */
 function parseChunks(frames: string[]): ParsedFrame[] {
-  return frames.map((f): ParsedFrame => {
-    if (!f.startsWith('data: ')) return null
-    const json = f.slice(6).trim()
+  return frames.map((frame): ParsedFrame => {
+    if (!frame.startsWith('data: ')) return null
+    const json = frame.slice(6).trim()
     if (json === '[DONE]') return DONE_SENTINEL
     const parsed: unknown = JSON.parse(json)
     if (!isSSEChunk(parsed)) return null
@@ -99,12 +99,12 @@ function parseChunks(frames: string[]): ParsedFrame[] {
 
 /** Filter parsed frames to only valid SSEChunk objects. */
 function chunkFrames(frames: ParsedFrame[]): SSEChunk[] {
-  return frames.filter((c): c is SSEChunk => c !== DONE_SENTINEL && c !== null)
+  return frames.filter((chunk): chunk is SSEChunk => chunk !== DONE_SENTINEL && chunk !== null)
 }
 
 /** Filter to chunks that have at least one choice. */
 function chunksWithChoices(frames: ParsedFrame[]): SSEChunk[] {
-  return chunkFrames(frames).filter((c) => c.choices.length > 0)
+  return chunkFrames(frames).filter((chunk) => chunk.choices.length > 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -169,8 +169,8 @@ describe('SSE text streaming conformance', () => {
     const frames = await collectFrames(textEvents)
     const chunks = chunkFrames(parseChunks(frames))
 
-    const contentChunks = chunks.filter((c) => {
-      const choice = c.choices[0]
+    const contentChunks = chunks.filter((chunk) => {
+      const choice = chunk.choices[0]
       return choice !== undefined && choice.delta.content !== undefined
     })
 
@@ -188,8 +188,8 @@ describe('SSE text streaming conformance', () => {
     const chunks = chunksWithChoices(parseChunks(frames))
 
     // All but last should be null
-    for (let i = 0; i < chunks.length - 1; i++) {
-      const chunk = chunks[i]
+    for (let chunkIndex = 0; chunkIndex < chunks.length - 1; chunkIndex++) {
+      const chunk = chunks[chunkIndex]
       if (chunk === undefined) continue
       const choice = chunk.choices[0]
       if (choice === undefined) continue
@@ -214,7 +214,7 @@ describe('SSE text streaming conformance', () => {
   test('chunk id is stable across the full stream', async () => {
     const frames = await collectFrames(textEvents)
     const chunks = chunkFrames(parseChunks(frames))
-    const ids = chunks.map((c) => c.id)
+    const ids = chunks.map((chunk) => chunk.id)
 
     const unique = new Set(ids)
     expect(unique.size).toBe(1)
@@ -246,7 +246,7 @@ describe('SSE usage chunk conformance', () => {
     const frames = await collectFrames(events, true)
     const chunks = chunkFrames(parseChunks(frames))
 
-    const usageChunk = chunks.find((c) => c.choices.length === 0)
+    const usageChunk = chunks.find((chunk) => chunk.choices.length === 0)
 
     expect(usageChunk).toBeDefined()
     if (usageChunk === undefined) return
@@ -262,7 +262,7 @@ describe('SSE usage chunk conformance', () => {
     const frames = await collectFrames(events, false)
     const chunks = chunkFrames(parseChunks(frames))
 
-    const usageChunk = chunks.find((c) => c.choices.length === 0)
+    const usageChunk = chunks.find((chunk) => chunk.choices.length === 0)
     expect(usageChunk).toBeUndefined()
   })
 
@@ -288,7 +288,7 @@ describe('SSE usage chunk conformance', () => {
     ]
 
     const chunks = chunkFrames(parseChunks(await collectFrames(cachedEvents, true)))
-    const usage = chunks.find((c) => c.choices.length === 0)?.usage
+    const usage = chunks.find((chunk) => chunk.choices.length === 0)?.usage
 
     expect(usage).toEqual({
       prompt_tokens: 9646,
@@ -349,8 +349,8 @@ describe('SSE tool call streaming conformance', () => {
     const frames = await collectFrames(toolEvents)
     const chunks = chunkFrames(parseChunks(frames))
 
-    const tcStartChunk = chunks.find((c) => {
-      const tc = c.choices[0]?.delta.tool_calls?.[0]
+    const tcStartChunk = chunks.find((chunk) => {
+      const tc = chunk.choices[0]?.delta.tool_calls?.[0]
       return tc !== undefined && tc.id !== undefined
     })
 
@@ -375,8 +375,8 @@ describe('SSE tool call streaming conformance', () => {
     const frames = await collectFrames(toolEvents)
     const chunks = chunkFrames(parseChunks(frames))
 
-    const deltaChunks = chunks.filter((c) => {
-      const tc = c.choices[0]?.delta.tool_calls?.[0]
+    const deltaChunks = chunks.filter((chunk) => {
+      const tc = chunk.choices[0]?.delta.tool_calls?.[0]
       return tc !== undefined && tc.id === undefined
     })
 

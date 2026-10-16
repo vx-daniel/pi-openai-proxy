@@ -11,21 +11,22 @@ export interface LogContext {
   readonly path: string
 }
 
-function timestamp(): string {
-  return new Date().toISOString()
+type LogLevel = 'info' | 'warn' | 'error'
+
+/** Write one JSON log line; every line starts with the `ts`, `level`, and `event` fields. */
+function writeLogLine(level: LogLevel, event: string, fields: Record<string, unknown>): void {
+  // oxlint-disable-next-line naming/no-abbreviations -- "ts" is the emitted log line field
+  const entry = { ts: new Date().toISOString(), level, event, ...fields }
+  console.error(JSON.stringify(entry))
 }
 
-export function logRequest(ctx: LogContext): void {
-  const entry = {
-    ts: timestamp(),
-    level: 'info',
-    event: 'request',
-    requestId: ctx.requestId,
-    clientRequestId: ctx.clientRequestId,
-    method: ctx.method,
-    path: ctx.path
-  }
-  console.error(JSON.stringify(entry))
+export function logRequest(context: LogContext): void {
+  writeLogLine('info', 'request', {
+    requestId: context.requestId,
+    clientRequestId: context.clientRequestId,
+    method: context.method,
+    path: context.path
+  })
 }
 
 /** What a chat request asked for and what it resolved to. */
@@ -43,87 +44,59 @@ export interface ChatRequestLogDetails {
  * without this a call cannot be traced to the model that served it. Logs ids only, never message
  * content or credentials.
  */
-export function logChatRequest(ctx: LogContext, details: ChatRequestLogDetails): void {
-  const entry = {
-    ts: timestamp(),
-    level: 'info',
-    event: 'chat_request',
-    requestId: ctx.requestId,
-    clientRequestId: ctx.clientRequestId,
-    method: ctx.method,
-    path: ctx.path,
+export function logChatRequest(context: LogContext, details: ChatRequestLogDetails): void {
+  writeLogLine('info', 'chat_request', {
+    requestId: context.requestId,
+    clientRequestId: context.clientRequestId,
+    method: context.method,
+    path: context.path,
     requestedModel: details.requestedModel,
     model: details.model,
     provider: details.provider,
     stream: details.stream
-  }
-  console.error(JSON.stringify(entry))
+  })
 }
 
-export function logResponse(ctx: LogContext, status: number, durationMs: number): void {
-  const entry = {
-    ts: timestamp(),
-    level: 'info',
-    event: 'response',
-    requestId: ctx.requestId,
+export function logResponse(context: LogContext, status: number, durationMs: number): void {
+  writeLogLine('info', 'response', {
+    requestId: context.requestId,
     status,
     durationMs: Math.round(durationMs)
-  }
-  console.error(JSON.stringify(entry))
+  })
 }
 
-export function logError(ctx: LogContext, message: string, detail?: string): void {
-  const entry = {
-    ts: timestamp(),
-    level: 'error',
-    event: 'error',
-    requestId: ctx.requestId,
+export function logError(context: LogContext, message: string, detail?: string): void {
+  writeLogLine('error', 'error', {
+    requestId: context.requestId,
     message,
     detail
-  }
-  console.error(JSON.stringify(entry))
+  })
 }
 
-export function logDisconnect(ctx: LogContext): void {
-  const entry = {
-    ts: timestamp(),
-    level: 'info',
-    event: 'disconnect',
-    requestId: ctx.requestId
-  }
-  console.error(JSON.stringify(entry))
+export function logDisconnect(context: LogContext): void {
+  writeLogLine('info', 'disconnect', {
+    requestId: context.requestId
+  })
 }
 
-export function logUpstreamOverload(ctx: LogContext, status: number, code: string): void {
-  const entry = {
-    ts: timestamp(),
-    level: 'warn',
-    event: 'upstream_overload',
-    requestId: ctx.requestId,
+export function logUpstreamOverload(context: LogContext, status: number, code: string): void {
+  writeLogLine('warn', 'upstream_overload', {
+    requestId: context.requestId,
     upstreamStatus: status,
     code
-  }
-  console.error(JSON.stringify(entry))
+  })
 }
 
 export function logStartup(host: string, port: number, modelCount: number): void {
-  const entry = {
-    ts: timestamp(),
-    level: 'info',
-    event: 'startup',
+  writeLogLine('info', 'startup', {
     host,
     port,
     modelCount
-  }
-  console.error(JSON.stringify(entry))
+  })
 }
 
 export function logShutdown(signal: string): void {
-  const entry = {
-    ts: timestamp(),
-    level: 'info',
-    event: 'shutdown',
+  writeLogLine('info', 'shutdown', {
     signal
-  }
-  console.error(JSON.stringify(entry))
+  })
 }

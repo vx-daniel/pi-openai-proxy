@@ -33,8 +33,8 @@ interface ProbeBody {
 function isProbeBody(value: unknown): value is ProbeBody {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
   if (!('data' in value)) return false
-  const v: { data: unknown } = value
-  return Array.isArray(v.data)
+  const candidate: { data: unknown } = value
+  return Array.isArray(candidate.data)
 }
 
 // Resolve pi-proxy binary: try local dev build, then installed package, then PATH
@@ -50,8 +50,10 @@ function findProxyBinary(packageRoot: string): string {
 }
 
 // A built entry runs on the runtime hosting pi (Node); anything else is an executable on PATH.
-function proxyCommand(bin: string): { cmd: string; args: string[] } {
-  return bin.endsWith('.mjs') ? { cmd: process.execPath, args: [bin] } : { cmd: bin, args: [] }
+function proxyCommand(bin: string): { command: string; args: string[] } {
+  return bin.endsWith('.mjs')
+    ? { command: process.execPath, args: [bin] }
+    : { command: bin, args: [] }
 }
 
 // --- PID file ---
@@ -63,17 +65,17 @@ function getPidPath(): string {
 }
 
 function readPid(): number | undefined {
-  const p = getPidPath()
-  if (!existsSync(p)) return undefined
+  const pidPath = getPidPath()
+  if (!existsSync(pidPath)) return undefined
   try {
-    const raw = readFileSync(p, 'utf-8').trim()
+    const raw = readFileSync(pidPath, 'utf-8').trim()
     const pid = Number.parseInt(raw, 10)
     if (!Number.isFinite(pid) || pid <= 0) return undefined
     try {
       process.kill(pid, 0)
       return pid
     } catch {
-      unlinkSync(p)
+      unlinkSync(pidPath)
       return undefined
     }
   } catch {
@@ -82,16 +84,16 @@ function readPid(): number | undefined {
 }
 
 function writePid(pid: number): void {
-  const p = getPidPath()
-  mkdirSync(dirname(p), { recursive: true })
-  writeFileSync(p, String(pid), 'utf-8')
+  const pidPath = getPidPath()
+  mkdirSync(dirname(pidPath), { recursive: true })
+  writeFileSync(pidPath, String(pid), 'utf-8')
 }
 
 function removePid(): void {
-  const p = getPidPath()
-  if (existsSync(p)) {
+  const pidPath = getPidPath()
+  if (existsSync(pidPath)) {
     try {
-      unlinkSync(p)
+      unlinkSync(pidPath)
     } catch {
       // ignore
     }
@@ -106,12 +108,12 @@ async function probe(state: ProxyState): Promise<RuntimeStatus> {
     if (state.config.authToken.length > 0) {
       headers['authorization'] = `Bearer ${state.config.authToken}`
     }
-    const res = await fetch(`${proxyUrl(state.config)}/v1/models`, {
+    const response = await fetch(`${proxyUrl(state.config)}/v1/models`, {
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
       headers
     })
-    if (res.ok) {
-      const body: unknown = await res.json()
+    if (response.ok) {
+      const body: unknown = await response.json()
       let modelCount = 0
       if (isProbeBody(body)) {
         modelCount = body.data.length
@@ -134,21 +136,24 @@ async function waitForReady(state: ProxyState, timeoutMs: number): Promise<Runti
   return { reachable: false, models: 0 }
 }
 
-export async function refreshStatus(state: ProxyState, ctx: ExtensionContext): Promise<void> {
+export async function refreshStatus(state: ProxyState, context: ExtensionContext): Promise<void> {
   const status = await probe(state)
   if (status.reachable) {
-    ctx.ui.setStatus('proxy', `proxy: ${proxyUrl(state.config)} (${String(status.models)} models)`)
+    context.ui.setStatus(
+      'proxy',
+      `proxy: ${proxyUrl(state.config)} (${String(status.models)} models)`
+    )
   } else {
-    ctx.ui.setStatus('proxy', undefined)
+    context.ui.setStatus('proxy', undefined)
   }
 }
 
 // --- Start ---
 
 function startDetached(bin: string, env: Record<string, string>): void {
-  const { cmd, args } = proxyCommand(bin)
+  const { command, args } = proxyCommand(bin)
 
-  const child = spawn(cmd, args, {
+  const child = spawn(command, args, {
     stdio: ['ignore', 'ignore', 'ignore'],
     detached: true,
     env: { ...process.env, ...env }
@@ -168,18 +173,18 @@ function startDetached(bin: string, env: Record<string, string>): void {
 
 function startSessionTied(
   state: ProxyState,
-  ctx: ExtensionContext,
+  context: ExtensionContext,
   bin: string,
   env: Record<string, string>
 ): void {
   if (state.sessionProcess !== undefined) {
-    ctx.ui.notify('Session proxy already running', 'info')
+    context.ui.notify('Session proxy already running', 'info')
     return
   }
 
-  const { cmd, args } = proxyCommand(bin)
+  const { command, args } = proxyCommand(bin)
 
-  const child = spawn(cmd, args, {
+  const child = spawn(command, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: false,
     env: { ...process.env, ...env }
@@ -189,22 +194,22 @@ function startSessionTied(
   child.on('exit', (code) => {
     state.sessionProcess = undefined
     if (code !== null && code !== 0) {
-      ctx.ui.notify(`Proxy exited with code ${String(code)}`, 'warning')
+      context.ui.notify(`Proxy exited with code ${String(code)}`, 'warning')
     }
-    ctx.ui.setStatus('proxy', undefined)
+    context.ui.setStatus('proxy', undefined)
   })
 
   child.on('error', (err) => {
     state.sessionProcess = undefined
-    ctx.ui.notify(`Proxy error: ${err.message}`, 'error')
-    ctx.ui.setStatus('proxy', undefined)
+    context.ui.notify(`Proxy error: ${err.message}`, 'error')
+    context.ui.setStatus('proxy', undefined)
   })
 }
 
-async function killStalePid(ctx: ExtensionContext): Promise<void> {
+async function killStalePid(context: ExtensionContext): Promise<void> {
   const existingPid = readPid()
   if (existingPid === undefined) return
-  ctx.ui.notify(`Stale proxy process ${String(existingPid)} -- killing`, 'warning')
+  context.ui.notify(`Stale proxy process ${String(existingPid)} -- killing`, 'warning')
   try {
     process.kill(existingPid, 'SIGTERM')
   } catch {
@@ -214,64 +219,64 @@ async function killStalePid(ctx: ExtensionContext): Promise<void> {
   await sleep(PROCESS_SETTLE_DELAY_MS)
 }
 
-async function spawnProxy(state: ProxyState, ctx: ExtensionContext): Promise<void> {
+async function spawnProxy(state: ProxyState, context: ExtensionContext): Promise<void> {
   const proxyEnv = configToEnv(state.config)
   const bin = findProxyBinary(state.packageRoot)
 
   if (state.config.lifetime === 'detached') {
     startDetached(bin, proxyEnv)
   } else {
-    startSessionTied(state, ctx, bin, proxyEnv)
+    startSessionTied(state, context, bin, proxyEnv)
   }
 
   const ready = await waitForReady(state, READY_TIMEOUT_MS)
   if (ready.reachable) {
     const mode = state.config.lifetime === 'detached' ? 'background' : 'session'
-    ctx.ui.notify(
+    context.ui.notify(
       `Proxy started at ${proxyUrl(state.config)} (${String(ready.models)} models) [${mode}]`,
       'info'
     )
   } else {
-    ctx.ui.notify(`Proxy spawned but not yet reachable at ${proxyUrl(state.config)}`, 'warning')
+    context.ui.notify(`Proxy spawned but not yet reachable at ${proxyUrl(state.config)}`, 'warning')
   }
-  await refreshStatus(state, ctx)
+  await refreshStatus(state, context)
 }
 
-export async function startProxy(state: ProxyState, ctx: ExtensionContext): Promise<void> {
+export async function startProxy(state: ProxyState, context: ExtensionContext): Promise<void> {
   state.config = loadConfigFromFile()
 
   const status = await probe(state)
   if (status.reachable) {
-    ctx.ui.notify(
+    context.ui.notify(
       `Proxy already running at ${proxyUrl(state.config)} (${String(status.models)} models)`,
       'info'
     )
-    await refreshStatus(state, ctx)
+    await refreshStatus(state, context)
     return
   }
 
   // Clean up stale PID
-  await killStalePid(ctx)
+  await killStalePid(context)
 
-  ctx.ui.setStatus('proxy', 'proxy: starting...')
+  context.ui.setStatus('proxy', 'proxy: starting...')
 
   try {
-    await spawnProxy(state, ctx)
+    await spawnProxy(state, context)
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err)
-    ctx.ui.notify(`Failed to start proxy: ${message}`, 'error')
-    ctx.ui.setStatus('proxy', undefined)
+    context.ui.notify(`Failed to start proxy: ${message}`, 'error')
+    context.ui.setStatus('proxy', undefined)
   }
 }
 
 // --- Stop / restart / status ---
 
-export async function stopProxy(state: ProxyState, ctx: ExtensionContext): Promise<void> {
+export async function stopProxy(state: ProxyState, context: ExtensionContext): Promise<void> {
   if (state.sessionProcess !== undefined) {
     state.sessionProcess.kill('SIGTERM')
     state.sessionProcess = undefined
-    ctx.ui.notify('Session proxy stopped', 'info')
-    ctx.ui.setStatus('proxy', undefined)
+    context.ui.notify('Session proxy stopped', 'info')
+    context.ui.setStatus('proxy', undefined)
     return
   }
 
@@ -280,8 +285,8 @@ export async function stopProxy(state: ProxyState, ctx: ExtensionContext): Promi
     try {
       process.kill(pid, 'SIGTERM')
       removePid()
-      ctx.ui.notify(`Proxy stopped (pid ${String(pid)})`, 'info')
-      ctx.ui.setStatus('proxy', undefined)
+      context.ui.notify(`Proxy stopped (pid ${String(pid)})`, 'info')
+      context.ui.setStatus('proxy', undefined)
       return
     } catch {
       removePid()
@@ -290,36 +295,36 @@ export async function stopProxy(state: ProxyState, ctx: ExtensionContext): Promi
 
   const status = await probe(state)
   if (status.reachable) {
-    ctx.ui.notify(
+    context.ui.notify(
       `Proxy at ${proxyUrl(state.config)} was not started by /proxy -- stop it manually`,
       'info'
     )
   } else {
-    ctx.ui.notify('Proxy is not running', 'info')
-    ctx.ui.setStatus('proxy', undefined)
+    context.ui.notify('Proxy is not running', 'info')
+    context.ui.setStatus('proxy', undefined)
   }
 }
 
-export async function restartProxy(state: ProxyState, ctx: ExtensionContext): Promise<void> {
-  await stopProxy(state, ctx)
+export async function restartProxy(state: ProxyState, context: ExtensionContext): Promise<void> {
+  await stopProxy(state, context)
   await sleep(PROCESS_SETTLE_DELAY_MS)
-  await startProxy(state, ctx)
+  await startProxy(state, context)
 }
 
-export async function showStatus(state: ProxyState, ctx: ExtensionContext): Promise<void> {
+export async function showStatus(state: ProxyState, context: ExtensionContext): Promise<void> {
   const status = await probe(state)
   const pid = readPid()
   const pidTag = pid === undefined ? '' : ` [pid ${String(pid)}]`
 
   if (status.reachable) {
-    ctx.ui.notify(
+    context.ui.notify(
       `${proxyUrl(state.config)} -- ${String(status.models)} models available${pidTag}`,
       'info'
     )
   } else {
-    ctx.ui.notify('Proxy not running. Use /proxy start', 'info')
+    context.ui.notify('Proxy not running. Use /proxy start', 'info')
   }
-  await refreshStatus(state, ctx)
+  await refreshStatus(state, context)
 }
 
 /** Kill a session-tied proxy when the pi session ends. */

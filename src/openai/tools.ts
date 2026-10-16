@@ -31,8 +31,8 @@ export type ToolConversionResult = ToolConversionSuccess | ToolConversionError
 export function convertTools(openaiTools: OpenAIFunctionTool[]): ToolConversionResult {
   const piTools: Tool[] = []
 
-  for (let i = 0; i < openaiTools.length; i++) {
-    const tool = openaiTools[i]
+  for (let toolIndex = 0; toolIndex < openaiTools.length; toolIndex++) {
+    const tool = openaiTools[toolIndex]
     if (tool === undefined) continue
 
     const fn = tool.function
@@ -42,7 +42,10 @@ export function convertTools(openaiTools: OpenAIFunctionTool[]): ToolConversionR
       // No parameters specified -- empty object
       parameters = Type.Object({})
     } else {
-      const result = jsonSchemaToTypebox(fn.parameters, `tools[${String(i)}].function.parameters`)
+      const result = jsonSchemaToTypebox(
+        fn.parameters,
+        `tools[${String(toolIndex)}].function.parameters`
+      )
       if (!result.ok) {
         return {
           ok: false,

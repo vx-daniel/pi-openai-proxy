@@ -37,8 +37,11 @@ export function createProxyState(packageRoot: string): ProxyState {
 // context, so each one calls useModelRegistry() first. It also refreshes the registry (from
 // models.json and stored credentials, no network), because the old code refreshed before every
 // read and a model list taken at session start would miss a later `/login`.
-export async function useModelRegistry(state: ProxyState, ctx: ExtensionContext): Promise<void> {
-  state.modelRegistry = ctx.modelRegistry
+export async function useModelRegistry(
+  state: ProxyState,
+  context: ExtensionContext
+): Promise<void> {
+  state.modelRegistry = context.modelRegistry
   await state.modelRegistry.refresh({ allowNetwork: false })
 }
 

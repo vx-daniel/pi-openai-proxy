@@ -34,10 +34,10 @@ describe('convertMessages', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.context.messages).toHaveLength(1)
-    const msg = result.context.messages[0]
-    expect(msg?.role).toBe('user')
-    assert(msg?.role === 'user')
-    expect(msg.content).toBe('Hello world')
+    const message = result.context.messages[0]
+    expect(message?.role).toBe('user')
+    assert(message?.role === 'user')
+    expect(message.content).toBe('Hello world')
   })
 
   test('converts assistant messages into history', () => {
@@ -111,10 +111,10 @@ describe('convertMessages', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.context.messages).toHaveLength(1)
-    const msg = result.context.messages[0]
-    assert(msg?.role === 'user' && Array.isArray(msg.content))
-    expect(msg.content).toHaveLength(2)
-    const imagePart = msg.content[1]
+    const message = result.context.messages[0]
+    assert(message?.role === 'user' && Array.isArray(message.content))
+    expect(message.content).toHaveLength(2)
+    const imagePart = message.content[1]
     assert(imagePart?.type === 'image')
     expect(imagePart.mimeType).toBe('image/png')
     expect(imagePart.data).toBe('iVBORw0KGgo=')

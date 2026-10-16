@@ -91,7 +91,7 @@ describe('exposure filtering', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.models.length).toBe(2)
-    const ids = result.models.map((m) => m.canonicalId)
+    const ids = result.models.map((model) => model.canonicalId)
     expect(ids).toContain('openai/gpt-4o')
     expect(ids).toContain('google/gemini-2.5-pro')
   })
@@ -127,7 +127,7 @@ describe('exposure filtering', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.models.length).toBe(2)
-    const ids = result.models.map((m) => m.canonicalId)
+    const ids = result.models.map((model) => model.canonicalId)
     expect(ids).toContain('openai/gpt-4o')
     expect(ids).toContain('anthropic/claude-sonnet-4-20250514')
   })
@@ -182,7 +182,7 @@ describe('public ID modes -- no collisions', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
 
-    const publicIds = result.models.map((m) => m.publicId)
+    const publicIds = result.models.map((model) => model.publicId)
     expect(publicIds).toContain('gpt-4o')
     expect(publicIds).toContain('claude-sonnet-4-20250514')
     expect(publicIds).toContain('gemini-2.5-pro')
@@ -193,7 +193,7 @@ describe('public ID modes -- no collisions', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
 
-    const publicIds = result.models.map((m) => m.publicId)
+    const publicIds = result.models.map((model) => model.publicId)
     expect(publicIds).toContain('gpt-4o')
     expect(publicIds).toContain('claude-sonnet-4-20250514')
   })
@@ -203,7 +203,7 @@ describe('public ID modes -- no collisions', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
 
-    const publicIds = result.models.map((m) => m.publicId)
+    const publicIds = result.models.map((model) => model.publicId)
     expect(publicIds).toContain('openai/gpt-4o')
     expect(publicIds).toContain('anthropic/claude-sonnet-4-20250514')
     expect(publicIds).toContain('google/gemini-2.5-pro')
@@ -229,7 +229,7 @@ describe('public ID modes -- with collisions', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
 
-    const publicIds = result.models.map((m) => m.publicId)
+    const publicIds = result.models.map((model) => model.publicId)
     // openai and codex collide on "gpt-4o", so ALL their models get prefixed
     expect(publicIds).toContain('openai/gpt-4o')
     expect(publicIds).toContain('openai/gpt-4o-mini')
@@ -254,7 +254,7 @@ describe('public ID modes -- with collisions', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
 
-    const publicIds = result.models.map((m) => m.publicId)
+    const publicIds = result.models.map((model) => model.publicId)
     expect(publicIds).toContain('openai/gpt-4o')
     expect(publicIds).toContain('codex/gpt-4o')
   })
@@ -279,7 +279,7 @@ describe('connected conflict groups', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
 
-    const publicIds = result.models.map((m) => m.publicId)
+    const publicIds = result.models.map((model) => model.publicId)
     // A, B, C form one connected group -- all prefixed
     expect(publicIds).toContain('provA/shared-ab')
     expect(publicIds).toContain('provB/shared-ab')
@@ -310,7 +310,7 @@ describe('provider prefix overrides', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
 
-    const publicIds = result.models.map((m) => m.publicId)
+    const publicIds = result.models.map((model) => model.publicId)
     expect(publicIds).toContain('oai/gpt-4o')
     expect(publicIds).toContain('cx/gpt-4o')
     // anthropic not in conflict group, so raw ID
@@ -328,7 +328,7 @@ describe('provider prefix overrides', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
 
-    const publicIds = result.models.map((m) => m.publicId)
+    const publicIds = result.models.map((model) => model.publicId)
     expect(publicIds).toContain('openai/gpt-4o') // no override -> provider key
     expect(publicIds).toContain('claude/claude-sonnet-4-20250514') // override
   })
@@ -494,7 +494,7 @@ describe('universal mode validation', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
 
-    const publicIds = result.models.map((m) => m.publicId)
+    const publicIds = result.models.map((model) => model.publicId)
     expect(publicIds).toContain('gpt-4o')
     expect(publicIds).toContain('claude')
     expect(publicIds.length).toBe(2)
