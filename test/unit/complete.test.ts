@@ -5,7 +5,7 @@
  * The actual completeSimple/streamSimple calls are tested via SDK conformance.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { mapFinishReason, mapUsage } from "@proxy/openai/responses";
 
 // We test the mapping logic through responses.ts which re-exports the same maps.

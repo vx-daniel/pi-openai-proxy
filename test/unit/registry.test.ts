@@ -2,8 +2,8 @@
  * Registry tests: request auth is resolved through Pi's ModelRuntime.
  */
 
-import { beforeAll, describe, expect, test } from "bun:test";
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { beforeAll, describe, expect, test } from "vite-plus/test";
 import { getRequestAuth, initRegistry } from "@proxy/pi/registry";
 
 beforeAll(async () => {

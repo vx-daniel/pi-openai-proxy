@@ -25,41 +25,28 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@v1.21.2
         with:
-          node-version: lts/*
+          node-version: "24"
           registry-url: https://registry.npmjs.org
-          cache: pnpm
+          cache: true
+        env:
+          VP_GIT_HOOKS: "0"
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Typecheck
-        run: pnpm run typecheck
-
-      - name: Lint (Biome)
-        run: pnpm run lint:biome
-
-      - name: Lint (oxlint)
-        run: pnpm run lint:oxlint
+      - name: Check (format, lint, types)
+        run: vp check
 
       - name: Test
-        run: pnpm run test:ci
+        run: vp run test:ci
 
       - name: Build
-        run: pnpm run build
+        run: vp pack
 
       - name: Verify package contents
-        run: pnpm pack --json --pack-destination /tmp
+        run: vp pm pack --json --pack-destination /tmp
 
       - name: Release
-        run: pnpm exec semantic-release
+        run: vp exec semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

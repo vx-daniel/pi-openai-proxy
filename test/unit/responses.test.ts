@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
 import type { AssistantMessage, StopReason } from "@earendil-works/pi-ai";
+import { describe, expect, test } from "vite-plus/test";
 import { buildChatCompletion, mapFinishReason, mapUsage } from "@proxy/openai/responses";
 
 describe("mapFinishReason", () => {

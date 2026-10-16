@@ -6,8 +6,8 @@
  * Skips when no credentials are available.
  */
 
-import { describe, expect, test } from "bun:test";
 import type OpenAI from "openai";
+import { describe, expect, test } from "vite-plus/test";
 import { createTestClient, getTestModels, setup } from "./helpers";
 
 const weatherTool: OpenAI.ChatCompletionTool = {
@@ -60,12 +60,12 @@ describe("SDK tool call conformance", () => {
 
 			const tc = choice.message.tool_calls?.[0];
 			expect(tc).toBeDefined();
-			expect(tc?.id).toBeString();
+			expect(tc?.id).toBeTypeOf("string");
 			expect(tc?.type).toBe("function");
 
 			if (tc !== undefined && tc.type === "function") {
-				expect(tc.function.name).toBeString();
-				expect(tc.function.arguments).toBeString();
+				expect(tc.function.name).toBeTypeOf("string");
+				expect(tc.function.arguments).toBeTypeOf("string");
 				expect(() => {
 					JSON.parse(tc.function.arguments);
 				}).not.toThrow();

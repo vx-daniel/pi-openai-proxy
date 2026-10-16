@@ -8,7 +8,7 @@
  * - Tool strict flag patching
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import type { ChatCompletionRequest, OpenAIFunctionTool } from "@proxy/openai/schemas";
 import {
 	applyToolStrictFlags,

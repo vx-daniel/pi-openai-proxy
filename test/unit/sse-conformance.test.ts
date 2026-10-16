@@ -5,13 +5,13 @@
  * contract the official SDK expects. Uses mock pi events, no credentials needed.
  */
 
-import { describe, expect, test } from "bun:test";
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
 	ToolCall,
 	Usage,
 } from "@earendil-works/pi-ai";
+import { describe, expect, test } from "vite-plus/test";
 import type { SSEChunk } from "@proxy/openai/sse";
 import { encodeDone, streamToSSE } from "@proxy/openai/sse";
 import { isRecord } from "@proxy/utils/guards";
@@ -147,7 +147,7 @@ describe("SSE text streaming conformance", () => {
 		for (const chunk of chunks) {
 			expect(chunk.id).toBe("req-1");
 			expect(chunk.object).toBe("chat.completion.chunk");
-			expect(chunk.created).toBeNumber();
+			expect(chunk.created).toBeTypeOf("number");
 			expect(chunk.created).toBeGreaterThan(0);
 			expect(chunk.model).toBe("test-model");
 		}
@@ -179,7 +179,7 @@ describe("SSE text streaming conformance", () => {
 			const choice = chunk.choices[0];
 			expect(choice).toBeDefined();
 			if (choice === undefined) continue;
-			expect(choice.delta.content).toBeString();
+			expect(choice.delta.content).toBeTypeOf("string");
 		}
 	});
 
@@ -253,9 +253,9 @@ describe("SSE usage chunk conformance", () => {
 		expect(usageChunk.choices).toEqual([]);
 		expect(usageChunk.usage).toBeDefined();
 		if (usageChunk.usage === undefined || usageChunk.usage === null) return;
-		expect(usageChunk.usage.prompt_tokens).toBeNumber();
-		expect(usageChunk.usage.completion_tokens).toBeNumber();
-		expect(usageChunk.usage.total_tokens).toBeNumber();
+		expect(usageChunk.usage.prompt_tokens).toBeTypeOf("number");
+		expect(usageChunk.usage.completion_tokens).toBeTypeOf("number");
+		expect(usageChunk.usage.total_tokens).toBeTypeOf("number");
 	});
 
 	test("usage chunk is absent when include_usage is false", async () => {
@@ -362,7 +362,7 @@ describe("SSE tool call streaming conformance", () => {
 		const tc = choice.delta.tool_calls?.[0];
 		expect(tc).toBeDefined();
 		if (tc === undefined) return;
-		expect(tc.index).toBeNumber();
+		expect(tc.index).toBeTypeOf("number");
 		expect(tc.index).toBe(0);
 		expect(tc.id).toBe("call_abc");
 		expect(tc.type).toBe("function");
@@ -388,10 +388,10 @@ describe("SSE tool call streaming conformance", () => {
 			const tc = choice.delta.tool_calls?.[0];
 			expect(tc).toBeDefined();
 			if (tc === undefined) continue;
-			expect(tc.index).toBeNumber();
+			expect(tc.index).toBeTypeOf("number");
 			expect(tc.function).toBeDefined();
 			if (tc.function === undefined) continue;
-			expect(tc.function.arguments).toBeString();
+			expect(tc.function.arguments).toBeTypeOf("string");
 		}
 	});
 

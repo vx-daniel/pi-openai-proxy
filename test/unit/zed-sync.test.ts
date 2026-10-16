@@ -10,11 +10,11 @@
  * - Edge cases: missing provider block, empty models, malformed JSONC
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 import type { ExposedModel } from "@proxy/openai/model-exposure";
 import { findZedSettings, syncToZed, toZedModel } from "@proxy/sync/zed";
 

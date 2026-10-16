@@ -5,9 +5,8 @@
  * without requiring actual API credentials.
  */
 
-import { beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "vite-plus/test";
 import { getAvailableModels, initRegistry } from "@proxy/pi/registry";
-
 import { isErrorBody, isErrorLike, jsonBody, testApp, testConfig } from "../helpers";
 
 let app: ReturnType<typeof testApp>;
@@ -175,7 +174,7 @@ describe("POST /v1/chat/completions - validation", () => {
 		});
 		const requestId = res.headers.get("x-request-id");
 		expect(requestId).toBeDefined();
-		expect(requestId).toStartWith("piproxy-");
+		expect(requestId).toMatch(/^piproxy-/);
 	});
 
 	test("echoes x-client-request-id", async () => {

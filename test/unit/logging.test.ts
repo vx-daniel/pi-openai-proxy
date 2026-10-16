@@ -2,15 +2,23 @@
  * Structured logging tests: the chat_request line.
  */
 
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import {
+	afterEach,
+	beforeEach,
+	describe,
+	expect,
+	test,
+	type MockInstance,
+	vi,
+} from "vite-plus/test";
 import { logChatRequest } from "@proxy/server/logging";
 
-type ErrorSpy = ReturnType<typeof spyOn<Console, "error">>;
+type ErrorSpy = MockInstance<Console["error"]>;
 
 let errorSpy: ErrorSpy;
 
 beforeEach(() => {
-	errorSpy = spyOn(console, "error").mockImplementation(() => undefined);
+	errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
 
 afterEach(() => {

@@ -5,8 +5,8 @@
  * and skip utilities for when no API credentials are available.
  */
 
-import { getAvailableModels, initRegistry } from "@proxy/pi/registry";
 import OpenAI from "openai";
+import { getAvailableModels, initRegistry } from "@proxy/pi/registry";
 import { testApp } from "../helpers";
 
 let initialized = false;

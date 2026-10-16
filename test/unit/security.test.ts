@@ -6,7 +6,7 @@
  * No credentials needed.
  */
 
-import { beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "vite-plus/test";
 import { getAvailableModels, initRegistry } from "@proxy/pi/registry";
 import { isErrorLike, jsonBody, testApp } from "../helpers";
 

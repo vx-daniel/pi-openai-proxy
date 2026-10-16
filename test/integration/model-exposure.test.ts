@@ -5,11 +5,10 @@
  * against the actual HTTP endpoints. No API credentials needed.
  */
 
-import { beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "vite-plus/test";
 import type { ServerConfig } from "@proxy/config/env";
 import { getAvailableModels, initRegistry } from "@proxy/pi/registry";
 import { isRecord } from "@proxy/utils/guards";
-
 import { isErrorBody, isModelListBody, jsonBody, testApp, testConfig } from "../helpers";
 
 beforeAll(async () => {
@@ -66,7 +65,7 @@ describe("publicModelIdMode through HTTP", () => {
 
 		if (!hasCollisions) {
 			for (const model of body.data) {
-				expect(model.id).toBeString();
+				expect(model.id).toBeTypeOf("string");
 			}
 		}
 	});

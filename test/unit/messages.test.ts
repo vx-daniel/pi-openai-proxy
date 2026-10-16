@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { convertMessages } from "@proxy/openai/messages";
 import type { OpenAIMessage } from "@proxy/openai/schemas";
 

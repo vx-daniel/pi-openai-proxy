@@ -5,7 +5,7 @@
  * responses parse correctly. Skips when no credentials are available.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { createTestClient, getCheapestModel, hasCredentials, setup } from "./helpers";
 
 describe("SDK models conformance", () => {
@@ -24,10 +24,10 @@ describe("SDK models conformance", () => {
 		expect(models.length).toBeGreaterThan(0);
 
 		const first = models[0] as Record<string, unknown>;
-		expect(first["id"]).toBeString();
+		expect(first["id"]).toBeTypeOf("string");
 		expect(first["object"]).toBe("model");
-		expect(first["created"]).toBeNumber();
-		expect(first["owned_by"]).toBeString();
+		expect(first["created"]).toBeTypeOf("number");
+		expect(first["owned_by"]).toBeTypeOf("string");
 	});
 
 	test("client.models.retrieve() returns a model object", async () => {
@@ -39,7 +39,7 @@ describe("SDK models conformance", () => {
 		const result = await client.models.retrieve(model.id);
 
 		expect(result.object).toBe("model");
-		expect(result.created).toBeNumber();
-		expect(result.owned_by).toBeString();
+		expect(result.created).toBeTypeOf("number");
+		expect(result.owned_by).toBeTypeOf("string");
 	});
 });
