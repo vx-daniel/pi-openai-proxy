@@ -243,6 +243,10 @@ provider environment and an auth-resolved base URL (`ModelRuntime.prepareRequest
 only pre-checks that auth resolves (`getRequestAuth()`), so a route can answer 401 before a
 response starts. A per-request `X-Pi-Upstream-Api-Key` overrides the resolved key.
 
+When resolution fails, the 401 and the warning carry only pi's summary of the failure
+(`summarizeAuthError`): pi's OAuth errors go on to quote the token endpoint's response and a stack
+with install paths, which reach the log at `debug` at most, as on `/healthz/creds?verify=true`.
+
 ### Per-request override
 
 Do not use the standard `Authorization: Bearer ...` header for upstream provider overrides.

@@ -18,7 +18,10 @@ const registryLogger = proxyLogger('pi', 'registry')
 let runtime: ModelRuntime | undefined
 let settingsManager: SettingsManager | undefined
 
-/** Outcome of resolving request auth for a model: usable, or why not. */
+/**
+ * Outcome of resolving request auth for a model: usable, or why not. `error` is already
+ * summarized (`summarizeAuthError`), so a route may put it in a response.
+ */
 export type RequestAuthResult = { ok: true } | { ok: false; error: string }
 
 /**
@@ -70,6 +73,62 @@ export function getAvailableModels(): Model<Api>[] {
   return [...getRuntime().getAvailableSnapshot()]
 }
 
+/** Longest credential error line logged at debug. */
+const MAX_AUTH_ERROR_LENGTH = 500
+/** Longest summary an HTTP response carries, before the status suffix. */
+const MAX_AUTH_SUMMARY_LENGTH = 200
+
+/**
+ * Pi's credential errors run `<summary>. url=…; body=…; details=…; stack=…`: the body and details
+ * quote the token endpoint's response, and the stack names files of the install. The HTTP response
+ * gets the summary up to the first of those fields, or the first JSON or array literal for an
+ * error worded some other way, plus the upstream status when there is one.
+ */
+const AUTH_ERROR_DETAIL = /[;\s](?:body|details|stack|response)=|[{[\n]/
+const AUTH_ERROR_STATUS = /\bstatus=(\d{3})\b/
+
+function firstLine(message: string): string {
+  const [line = message] = message.split('\n')
+  return line.slice(0, MAX_AUTH_ERROR_LENGTH)
+}
+
+/** A credential error as an HTTP response may carry it: no upstream body, no stack. */
+export function summarizeAuthError(message: string): string {
+  const [summary = message] = message.split(AUTH_ERROR_DETAIL)
+  const trimmed = summary
+    .trim()
+    .replace(/[;:,]$/, '')
+    .slice(0, MAX_AUTH_SUMMARY_LENGTH)
+  const status = AUTH_ERROR_STATUS.exec(message)?.[1]
+  return status === undefined ? trimmed : `${trimmed} (HTTP ${status})`
+}
+
+/**
+ * Log a credential failure and return what an HTTP response may carry. The warning names the
+ * provider and the summary; the raw first line, which can quote the token endpoint's response,
+ * goes to debug only, like other upstream error text. pi's stack trace goes nowhere.
+ */
+function reportAuthFailure(
+  action: 'resolution' | 'verification',
+  provider: string,
+  error: unknown
+): string {
+  const message = error instanceof Error ? error.message : String(error)
+  const summary = summarizeAuthError(message)
+  registryLogger.warn('Credential {action} failed for provider {provider}: {reason}', {
+    action,
+    provider,
+    reason: summary,
+    credentialsResolved: false
+  })
+  registryLogger.debug('Credential {action} error for {provider}: {error}', {
+    action,
+    provider,
+    error: firstLine(message.split('; stack=')[0] ?? message)
+  })
+  return summary
+}
+
 /**
  * Check that Pi can authenticate a request to this model right now.
  *
@@ -96,14 +155,7 @@ export async function getRequestAuth(model: Model<Api>): Promise<RequestAuthResu
     })
     return { ok: true }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    registryLogger.warn('Credential resolution failed for provider {provider}: {error}', {
-      provider,
-      modelId,
-      credentialsResolved: false,
-      error: message
-    })
-    return { ok: false, error: message }
+    return { ok: false, error: reportAuthFailure('resolution', provider, error) }
   }
 }
 
@@ -147,36 +199,6 @@ export interface ProviderCredentialStatus {
   readonly error?: string
 }
 
-/** Longest verification error line logged at debug. */
-const MAX_AUTH_ERROR_LENGTH = 500
-/** Longest summary an HTTP response carries, before the status suffix. */
-const MAX_AUTH_SUMMARY_LENGTH = 200
-
-/**
- * Pi's credential errors run `<summary>. url=…; body=…; details=…; stack=…`: the body and details
- * quote the token endpoint's response, and the stack names files of the install. The HTTP response
- * gets the summary up to the first of those fields, or the first JSON or array literal for an
- * error worded some other way, plus the upstream status when there is one.
- */
-const AUTH_ERROR_DETAIL = /[;\s](?:body|details|stack|response)=|[{[\n]/
-const AUTH_ERROR_STATUS = /\bstatus=(\d{3})\b/
-
-function firstLine(message: string): string {
-  const [line = message] = message.split('\n')
-  return line.slice(0, MAX_AUTH_ERROR_LENGTH)
-}
-
-/** A credential error as an HTTP response may carry it: no upstream body, no stack. */
-export function summarizeAuthError(message: string): string {
-  const [summary = message] = message.split(AUTH_ERROR_DETAIL)
-  const trimmed = summary
-    .trim()
-    .replace(/[;:,]$/, '')
-    .slice(0, MAX_AUTH_SUMMARY_LENGTH)
-  const status = AUTH_ERROR_STATUS.exec(message)?.[1]
-  return status === undefined ? trimmed : `${trimmed} (HTTP ${status})`
-}
-
 async function verifyProvider(
   provider: string
 ): Promise<Pick<ProviderCredentialStatus, 'verified' | 'error'>> {
@@ -186,15 +208,7 @@ async function verifyProvider(
       ? { verified: false, error: 'no credentials configured' }
       : { verified: true }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    registryLogger.warn('Credential verification failed for {provider}', { provider })
-    // The full first line quotes the token endpoint's response: debug only, like other upstream
-    // error text. The stack after it stays out of the log as well.
-    registryLogger.debug('Credential verification error for {provider}: {error}', {
-      provider,
-      error: firstLine(message.split('; stack=')[0] ?? message)
-    })
-    return { verified: false, error: summarizeAuthError(message) }
+    return { verified: false, error: reportAuthFailure('verification', provider, error) }
   }
 }
 
