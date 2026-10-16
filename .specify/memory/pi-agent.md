@@ -67,6 +67,7 @@ pnpm test
 ## Recent Changes
 
 - Phase 3D compatibility and resilience decisions were finalized.
+- A `chat_request` log line now records the requested and resolved model of each chat request (ids and flags only).
 - Model exposure and identifier controls were added to the proxy contract.
 - Stable OpenAI-compatible proxy behavior is documented and shipped.
 

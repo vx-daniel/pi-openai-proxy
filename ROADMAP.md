@@ -105,6 +105,10 @@ Research-backed decisions on deferred compatibility and resilience items. Analys
 - [x] Verified with real providers: Claude, Gemini, gpt-5.4-mini
 - [ ] Run compatibility smoke tests with target clients (Open WebUI, Continue, Aider)
 
+## Fork maintenance [DONE]
+
+- [x] Add a `chat_request` log line naming the requested and the resolved model of each chat request
+
 ## Phase 4 — Monorepo and proper CLI
 
 Split into two packages in a pnpm/turborepo monorepo (reference: pi-maestro structure).

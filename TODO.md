@@ -365,6 +365,10 @@ Analysis document: `docs/engineering/phase-3d-analysis.md`
 - [x] Document stateless/no-retry architecture as intentional design choice in PLAN.md
 - [x] Add structured `upstream_overload` warn-level logging for 429 and 503 responses
 
+## Fork maintenance [DONE]
+
+- [x] Add a `chat_request` log line naming the requested and the resolved model of each chat request (idea from laixintao/pi-openai-proxy, implemented independently)
+
 ## Phase 4 — Experimental agentic mode
 
 ### Contract

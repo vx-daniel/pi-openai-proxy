@@ -957,6 +957,9 @@ Minimum production observability:
 - accepted `X-Client-Request-Id`
 - upstream request ID capture where available
 - structured request logs
+- a `chat_request` log line, written once the model has resolved, with the requested model, the
+  resolved canonical `provider/id`, the provider and the stream mode (ids and flags only: never
+  message content or credentials; not written when the model is not found)
 - latency logging
 - disconnect and abort logging
 - usage logging when available
