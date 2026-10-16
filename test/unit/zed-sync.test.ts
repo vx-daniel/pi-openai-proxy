@@ -508,12 +508,15 @@ describe('syncToZed', () => {
 
         expect(readFileSync(settingsPath, 'utf-8')).toBe(MALFORMED)
         expect(result).toMatchObject({ ok: false, configPath: settingsPath })
-        expect(result.error).toContain('syntax errors')
+        // The missing comma is reported where "assistant" starts: line 5, column 3.
+        expect(result.error).toContain('syntax errors (CommaExpected at line 5, column 3)')
         expect(errors).toEqual([
           expect.objectContaining({
             properties: expect.objectContaining({
               configPath: settingsPath,
-              firstErrorCode: 'CommaExpected'
+              firstErrorCode: 'CommaExpected',
+              line: 5,
+              column: 3
             }) as unknown
           })
         ])
@@ -521,9 +524,15 @@ describe('syncToZed', () => {
       }
     )
 
-    // Catches the check being stricter than Zed: trailing commas are valid Zed settings.
-    test('still syncs a file whose only quirk is trailing commas', () => {
-      writeFileSync(settingsPath, '{\n  "theme": "One Dark",\n}\n')
+    // Catches the check being stricter than Zed: trailing commas are valid Zed settings, and a
+    // file with no value at all (new, emptied, or only comments) is empty settings, not broken.
+    test.each([
+      ['trailing commas', '{\n  "theme": "One Dark",\n}\n'],
+      ['an empty file', ''],
+      ['a blank file', '  \n\n'],
+      ['only comments', '// Zed settings\n// nothing yet\n']
+    ])('still syncs a file with %s', (_case, text) => {
+      writeFileSync(settingsPath, text)
 
       const result = syncToZed([makeExposed()], {
         providerName: 'Pi Proxy',
