@@ -49,7 +49,7 @@ Out of scope for the stable proxy:
 Strict tooling through [Vite+](https://viteplus.dev), configured in `vite.config.ts`:
 
 - **TypeScript**: ultra-strict (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noPropertyAccessFromIndexSignature`)
-- **Oxfmt** (`vp fmt`): tabs, 100 columns, sorted imports; Markdown is left as written
+- **Oxfmt** (`vp fmt`): the Viaanix style copied from `oxc-config-viaanix` v4.0.0 (single quotes, no semicolons, no trailing commas, 2-space indent, 100 columns, sorted imports); Markdown and the lockfile are left as written. Lint skips hidden folders, `dist/`, and `docs/` (Viaanix `ignorePatterns`)
 - **Oxlint** (`vp lint`): the Viaanix shared rules (copied and flattened from `Viaanix/oxc-config-viaanix` v4.0.0 strict: base, TypeScript, type-aware, strict layers), type checking, `maxWarnings: 0`, and `reportUnusedDisableDirectives: deny`; plus repo additions: `no-unsafe-type-assertion`, `no-unnecessary-condition`, stricter `no-unused-vars`, zod plugin, import-alias plugin, and repo rules in `lint/repo-rules.ts` (`no-enum`, `no-delete`, `no-implicit-any-let`). `no-console` is off only for `src/server/logging.ts` and `src/index.ts`
 - **`vp check`**: format, lint, and type check in one pass
 - **Vitest** (`vp test`): tests import from `vite-plus/test`
