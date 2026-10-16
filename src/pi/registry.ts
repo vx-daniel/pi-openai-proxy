@@ -103,27 +103,29 @@ export function summarizeAuthError(message: string): string {
   return status === undefined ? trimmed : `${trimmed} (HTTP ${status})`
 }
 
+/** Which credential lookup failed: one for a model's chat request, or a provider's health check. */
+interface AuthFailureSource {
+  readonly action: 'resolution' | 'verification'
+  readonly provider: string
+  readonly modelId?: string
+}
+
 /**
  * Log a credential failure and return what an HTTP response may carry. The warning names the
- * provider and the summary; the raw first line, which can quote the token endpoint's response,
- * goes to debug only, like other upstream error text. pi's stack trace goes nowhere.
+ * provider (and model, for a chat request) and the summary; the raw first line, which can quote
+ * the token endpoint's response, goes to debug only, like other upstream error text. pi's stack
+ * trace goes nowhere.
  */
-function reportAuthFailure(
-  action: 'resolution' | 'verification',
-  provider: string,
-  error: unknown
-): string {
+function reportAuthFailure(source: AuthFailureSource, error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
   const summary = summarizeAuthError(message)
   registryLogger.warn('Credential {action} failed for provider {provider}: {reason}', {
-    action,
-    provider,
+    ...source,
     reason: summary,
     credentialsResolved: false
   })
   registryLogger.debug('Credential {action} error for {provider}: {error}', {
-    action,
-    provider,
+    ...source,
     error: firstLine(message.split('; stack=')[0] ?? message)
   })
   return summary
@@ -155,7 +157,10 @@ export async function getRequestAuth(model: Model<Api>): Promise<RequestAuthResu
     })
     return { ok: true }
   } catch (error) {
-    return { ok: false, error: reportAuthFailure('resolution', provider, error) }
+    return {
+      ok: false,
+      error: reportAuthFailure({ action: 'resolution', provider, modelId }, error)
+    }
   }
 }
 
@@ -208,7 +213,10 @@ async function verifyProvider(
       ? { verified: false, error: 'no credentials configured' }
       : { verified: true }
   } catch (error) {
-    return { verified: false, error: reportAuthFailure('verification', provider, error) }
+    return {
+      verified: false,
+      error: reportAuthFailure({ action: 'verification', provider }, error)
+    }
   }
 }
 

@@ -246,6 +246,10 @@ response starts. A per-request `X-Pi-Upstream-Api-Key` overrides the resolved ke
 When resolution fails, the 401 and the warning carry only pi's summary of the failure
 (`summarizeAuthError`): pi's OAuth errors go on to quote the token endpoint's response and a stack
 with install paths, which reach the log at `debug` at most, as on `/healthz/creds?verify=true`.
+The summary is pi's own first clause, so it can still quote operator config: for a `models.json`
+key command that resolves to nothing, pi's message names the command
+(`… from shell command: <command>`). Keep secrets out of key commands themselves (read them from a
+file or a secret manager the command calls).
 
 ### Per-request override
 

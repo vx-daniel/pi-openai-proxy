@@ -95,5 +95,12 @@ describe('chat request with a credential that fails to resolve', () => {
       expect(record.line).not.toContain(LEAKED_DETAIL)
       expect(record.line).not.toContain(LEAKED_PATH)
     }
+
+    // The detail is kept for whoever turns debug on, but pi's stack never is.
+    const debugDetail = records.filter(
+      (record) => record.level === 'DEBUG' && record.line.includes(LEAKED_DETAIL)
+    )
+    expect(debugDetail).not.toEqual([])
+    for (const record of records) expect(record.line).not.toContain(LEAKED_PATH)
   })
 })

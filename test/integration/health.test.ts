@@ -163,8 +163,9 @@ describe('/healthz/creds', () => {
     }
   })
 
-  // Catches a credential that cannot resolve passing verification, or a verification failure
-  // failing the whole endpoint instead of being reported against its provider.
+  // Catches a credential that cannot resolve passing verification, a verification failure
+  // failing the whole endpoint instead of being reported against its provider, or the failure's
+  // detail (pi's errors can quote the token endpoint's response and a stack) reaching the body.
   test('answers 503 and names the provider whose credential fails to verify', async () => {
     await loadAgentDir({
       providers: {
@@ -172,14 +173,18 @@ describe('/healthz/creds', () => {
         'health-broken': {
           baseUrl: 'http://127.0.0.1:9/v1',
           api: 'openai-completions',
-          apiKey: '!exit 3',
+          // Prints nothing, so pi quotes the command, written in its OAuth errors' shape.
+          apiKey: '!true; body=notarealsecret-health-detail; stack=at notarealsecret-health-path',
           models: [{ id: 'broken-model' }]
         }
       }
     })
     try {
       const response = await testApp().request('/healthz/creds?verify=true')
-      const body = await jsonBody(response)
+      const text = await response.text()
+      const body: unknown = JSON.parse(text)
+
+      expect(text).not.toContain('notarealsecret-health')
 
       expect(response.status).toBe(503)
       const providers = isRecord(body) ? body['providers'] : undefined
