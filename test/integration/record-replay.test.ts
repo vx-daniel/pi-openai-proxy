@@ -5,7 +5,9 @@
  * recorder in front of a real provider.
  */
 
+import { once } from 'node:events'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -160,7 +162,7 @@ describe('recorder whose upstream cannot be reached', () => {
   // Catches an unreachable upstream recorded as an exchange (a fixture of the recorder's own
   // failure) or answered as anything a provider client would retry or take for a real answer.
   test('answers 502 with the reason and keeps no exchange', async () => {
-    const unreachable = 'http://127.0.0.1:9'
+    const unreachable = await closedOrigin()
     const deadEnd = await startRecorder(unreachable)
     try {
       const response = await fetch(`${deadEnd.baseUrl}/v1/chat/completions`, {
@@ -177,7 +179,10 @@ describe('recorder whose upstream cannot be reached', () => {
       }).toEqual({
         status: HTTP_BAD_GATEWAY,
         contentType: 'text/plain',
-        text: `recorder could not reach ${unreachable}: TypeError: fetch failed`,
+        // The proxy's part of the message; the cause after it is Node's wording.
+        text: expect.stringMatching(
+          new RegExp(`^recorder could not reach ${unreachable.replaceAll('.', '\\.')}: .+`)
+        ),
         exchanges: []
       })
     } finally {
@@ -185,3 +190,15 @@ describe('recorder whose upstream cannot be reached', () => {
     }
   })
 })
+
+/** An origin nothing listens on: a port the OS just handed out, then released. */
+async function closedOrigin(): Promise<string> {
+  const server = createServer()
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('expected a TCP address')
+  server.close()
+  await once(server, 'close')
+  return `http://127.0.0.1:${String(address.port)}`
+}
