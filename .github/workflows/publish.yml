@@ -11,7 +11,9 @@ permissions:
 
 jobs:
   release:
-    runs-on: [self-hosted, Linux, X64, vps]
+    # GitHub-hosted: no self-hosted runner is registered on this repository, so a `vps`-labelled job
+    # queues forever (the first release run sat queued until it was cancelled).
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       issues: write
@@ -34,14 +36,10 @@ jobs:
         env:
           VP_GIT_HOOKS: '0'
 
-      - name: Check (format, lint, types)
-        run: vp check
-
-      - name: Test
-        run: vp run test:ci
-
-      - name: Build
-        run: vp pack
+      # The same gate as CI and the pre-commit hook (scripts/gate.ts): nothing is published that
+      # would not pass a pull request.
+      - name: Gate (oxfmt + oxlint + type check + tests + build)
+        run: pnpm run check:all
 
       - name: Verify package contents
         run: vp pm pack --json --pack-destination /tmp

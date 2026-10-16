@@ -1,0 +1,48 @@
+# CI — the enforced quality gate.
+#
+# Runs the SAME gate as the local pre-commit hook (`check:all` = scripts/gate.ts: oxfmt → oxlint with
+# the type check → vitest → the tsdown build), so "green" means one thing whether it ran on a machine
+# or here. A commit made with `--no-verify`, or by someone without the hooks installed, is caught at
+# the pull request instead of slipping into `dev`.
+#
+# Pull requests into `dev` (the integration branch) and `main` (the release branch) are gated, and so
+# is every push to `dev`, so a merge result is checked too. Pushes to `main` are gated by the release
+# workflow, which runs the same `check:all` before it publishes.
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev]
+  # Required so `gate` still runs — and can satisfy a required status check — when a pull request
+  # merges through a merge queue. Without it, enabling a merge queue would deadlock every merge.
+  merge_group:
+
+# A newer push to the same branch cancels an in-flight run — no point finishing stale CI.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: gate # this string is the required-status-check context; renaming it breaks the branch rule
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      # Node, pnpm and the frozen install (`vp install`, which fails when the lockfile and
+      # package.json disagree). VP_GIT_HOOKS=0 keeps `prepare` (`vp config`) from installing hooks.
+      - uses: voidzero-dev/setup-vp@v1.21.2
+        with:
+          node-version: '24'
+          cache: true
+        env:
+          VP_GIT_HOOKS: '0'
+
+      - name: Gate (oxfmt + oxlint + type check + tests + build)
+        run: pnpm run check:all
