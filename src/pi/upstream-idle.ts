@@ -7,7 +7,11 @@
  * long streamed answers mid-text.
  */
 
-import type { AssistantMessageEvent, AssistantMessageEventStream } from '@earendil-works/pi-ai'
+import {
+  type AssistantMessageEvent,
+  type AssistantMessageEventStream,
+  createAssistantMessageEventStream
+} from '@earendil-works/pi-ai'
 
 const MS_PER_SECOND = 1000
 
@@ -52,34 +56,52 @@ export function idleTimeoutMessage(idleMs: number): string {
   return `Upstream timeout: the provider sent nothing for ${duration}`
 }
 
-/**
- * Restart `idle` on every event the provider pushes into `stream`, and stop it when the stream
- * ends. The hook sits on `push`, the provider's side, not on the consumer's iteration: a client
- * that reads slowly must not make an active upstream look idle.
- *
- * This replaces `push` on pi's EventStream instance, which pi's providers call through the
- * instance. A pi release that stops doing so would leave the timer running out on every call
- * longer than `idleMs`; `test/integration/upstream-timeout.test.ts` runs a real pi provider past
- * the timeout and fails if that happens, so check it on every pi upgrade.
- *
- * When the idle timeout, and not the client leaving, is what ended the call, the error event's
- * message says so instead of the provider SDK's generic "aborted".
- */
-export function watchUpstreamActivity(
-  stream: AssistantMessageEventStream,
+/** Restart the wait for any event, or name the timeout in the error event it caused. */
+function observe(
+  event: AssistantMessageEvent,
   idle: UpstreamIdleTimeout,
   clientSignal: AbortSignal | undefined
 ): void {
-  const push = stream.push.bind(stream)
-  stream.push = (event: AssistantMessageEvent): void => {
-    if (event.type !== 'error') {
-      idle.touch()
-    } else if (idle.signal.aborted && clientSignal?.aborted !== true) {
-      event.error.errorMessage = idleTimeoutMessage(idle.idleMs)
-    }
-    push(event)
+  if (event.type !== 'error') {
+    idle.touch()
+  } else if (idle.signal.aborted && clientSignal?.aborted !== true) {
+    // The idle timeout, not the client leaving, ended the call: say so instead of the provider
+    // SDK's generic "aborted".
+    event.error.errorMessage = idleTimeoutMessage(idle.idleMs)
   }
-  void stream.result().finally(() => {
-    idle.dispose()
-  })
+}
+
+/**
+ * Read pi's event stream as the provider fills it, restart `idle` on every event, and pass each
+ * one on through a new stream, which is what the caller reads. The timer stops when the upstream
+ * stream ends.
+ *
+ * Only pi's public stream API is used (async iteration, `createAssistantMessageEventStream`). The
+ * relay reads as fast as the provider writes, whatever the client does with the relayed stream
+ * (both queue without limit), so a client that reads slowly cannot make an active upstream look
+ * idle.
+ */
+export function relayUpstreamActivity(
+  upstream: AssistantMessageEventStream,
+  idle: UpstreamIdleTimeout,
+  clientSignal: AbortSignal | undefined
+): AssistantMessageEventStream {
+  const relayed = createAssistantMessageEventStream()
+  const relay = async (): Promise<void> => {
+    let terminated = false
+    try {
+      for await (const event of upstream) {
+        observe(event, idle, clientSignal)
+        terminated ||= event.type === 'done' || event.type === 'error'
+        relayed.push(event)
+      }
+    } finally {
+      idle.dispose()
+    }
+    // A done or error event already settled the relayed stream. Otherwise the provider ended the
+    // stream without one: pass on whatever result it ended with.
+    if (!terminated) relayed.end(await upstream.result())
+  }
+  void relay()
+  return relayed
 }

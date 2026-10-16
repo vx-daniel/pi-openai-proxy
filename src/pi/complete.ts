@@ -18,7 +18,7 @@ import type {
 import { proxyLogger } from '@proxy/logging'
 import type { ChatCompletionRequest, OpenAIFunctionTool } from '@proxy/openai/schemas'
 import { getRuntime } from '@proxy/pi/registry'
-import { startUpstreamIdleTimeout, watchUpstreamActivity } from '@proxy/pi/upstream-idle'
+import { relayUpstreamActivity, startUpstreamIdleTimeout } from '@proxy/pi/upstream-idle'
 import { isRecord } from '@proxy/utils/guards'
 
 const completeLogger = proxyLogger('pi', 'complete')
@@ -739,10 +739,11 @@ async function openUpstream(
     logUpstreamThrow(call, error)
     throw error
   }
-  if (idle !== undefined) watchUpstreamActivity(eventStream, idle, options.signal)
+  const watched =
+    idle === undefined ? eventStream : relayUpstreamActivity(eventStream, idle, options.signal)
   // Resolves with the final message once the stream ends with done or error; it never rejects.
-  void eventStream.result().then((message) => logUpstreamResult(call, message))
-  return eventStream
+  void watched.result().then((message) => logUpstreamResult(call, message))
+  return watched
 }
 
 /**

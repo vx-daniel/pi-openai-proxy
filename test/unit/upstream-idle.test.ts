@@ -7,7 +7,7 @@ import {
   type AssistantMessageEvent,
   createAssistantMessageEventStream
 } from '@earendil-works/pi-ai'
-import { startUpstreamIdleTimeout, watchUpstreamActivity } from '@proxy/pi/upstream-idle'
+import { relayUpstreamActivity, startUpstreamIdleTimeout } from '@proxy/pi/upstream-idle'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vite-plus/test'
 
 const IDLE_MS = 1000
@@ -55,64 +55,93 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+function relayed(clientSignal?: AbortSignal) {
+  const idle = startUpstreamIdleTimeout(IDLE_MS)
+  const upstream = createAssistantMessageEventStream()
+  const downstream = relayUpstreamActivity(upstream, idle, clientSignal)
+  return { idle, upstream, downstream }
+}
+
+async function collect(stream: AsyncIterable<AssistantMessageEvent>): Promise<string[]> {
+  const types: string[] = []
+  for await (const event of stream) types.push(event.type)
+  return types
+}
+
 describe('upstream idle timeout', () => {
   // Catches the timer counting the whole call: events closer together than the timeout keep it
   // from firing however long the call runs.
-  test('each upstream event restarts the wait', () => {
-    const idle = startUpstreamIdleTimeout(IDLE_MS)
-    const stream = createAssistantMessageEventStream()
-    watchUpstreamActivity(stream, idle, undefined)
+  test('each upstream event restarts the wait', async () => {
+    const { idle, upstream } = relayed()
 
     for (let eventIndex = 0; eventIndex < 10; eventIndex++) {
-      vi.advanceTimersByTime(IDLE_MS - 1)
-      stream.push(textDelta)
+      await vi.advanceTimersByTimeAsync(IDLE_MS - 1)
+      upstream.push(textDelta)
     }
+    await vi.advanceTimersByTimeAsync(0)
     expect(idle.signal.aborted).toBe(false)
 
-    vi.advanceTimersByTime(IDLE_MS)
+    await vi.advanceTimersByTimeAsync(IDLE_MS)
     expect(idle.signal.aborted).toBe(true)
   })
 
+  // Catches the relay dropping or reordering events, above all the final one that settles the
+  // result, which a consumer needs to finish the response.
+  test('passes every event and the final message on', async () => {
+    const { upstream, downstream } = relayed()
+    const final = message('stop')
+
+    upstream.push(textDelta)
+    upstream.push(textDelta)
+    upstream.push({ type: 'done', reason: 'stop', message: final })
+
+    expect(await collect(downstream)).toEqual(['text_delta', 'text_delta', 'done'])
+    expect(await downstream.result()).toBe(final)
+  })
+
+  // Catches a provider that ends its stream with a result but no done event leaving the relayed
+  // stream unsettled, so the response never finishes.
+  test('passes on a result the provider ended with, without a done event', async () => {
+    const { upstream, downstream } = relayed()
+    const final = message('stop')
+
+    upstream.push(textDelta)
+    upstream.end(final)
+
+    expect(await collect(downstream)).toEqual(['text_delta'])
+    expect(await downstream.result()).toBe(final)
+  })
+
   // Catches a timed-out call being reported as the SDK's generic abort, which maps to 502.
-  test('names the timeout in the error event it caused', () => {
-    const idle = startUpstreamIdleTimeout(IDLE_MS)
-    const stream = createAssistantMessageEventStream()
-    watchUpstreamActivity(stream, idle, undefined)
+  test('names the timeout in the error event it caused', async () => {
+    const { upstream, downstream } = relayed()
 
-    vi.advanceTimersByTime(IDLE_MS)
-    const event = abortedEvent()
-    stream.push(event)
+    await vi.advanceTimersByTimeAsync(IDLE_MS)
+    upstream.push(abortedEvent())
 
-    expect(event.type === 'error' ? event.error.errorMessage : undefined).toBe(
+    expect((await downstream.result()).errorMessage).toBe(
       'Upstream timeout: the provider sent nothing for 1 s'
     )
   })
 
   // Catches a client that left being logged as an upstream timeout when both fired.
-  test('leaves the error alone when the client disconnected', () => {
-    const idle = startUpstreamIdleTimeout(IDLE_MS)
+  test('leaves the error alone when the client disconnected', async () => {
     const client = new AbortController()
-    const stream = createAssistantMessageEventStream()
-    watchUpstreamActivity(stream, idle, client.signal)
+    const { upstream, downstream } = relayed(client.signal)
 
     client.abort()
-    vi.advanceTimersByTime(IDLE_MS)
-    const event = abortedEvent()
-    stream.push(event)
+    await vi.advanceTimersByTimeAsync(IDLE_MS)
+    upstream.push(abortedEvent())
 
-    expect(event.type === 'error' ? event.error.errorMessage : undefined).toBe(
-      'Request was aborted.'
-    )
+    expect((await downstream.result()).errorMessage).toBe('Request was aborted.')
   })
 
   // Catches a timer left running after the stream ended, aborting a finished call later.
   test('stops once the stream ends', async () => {
-    const idle = startUpstreamIdleTimeout(IDLE_MS)
-    const stream = createAssistantMessageEventStream()
-    watchUpstreamActivity(stream, idle, undefined)
+    const { idle, upstream, downstream } = relayed()
 
-    stream.push({ type: 'done', reason: 'stop', message: message('stop') })
-    await stream.result()
+    upstream.push({ type: 'done', reason: 'stop', message: message('stop') })
+    await downstream.result()
     await vi.advanceTimersByTimeAsync(IDLE_MS * 2)
 
     expect(idle.signal.aborted).toBe(false)
