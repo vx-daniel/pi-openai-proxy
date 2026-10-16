@@ -388,12 +388,14 @@ vp install            # Install dependencies (pnpm); also installs the Git hooks
 vp run dev            # Rebuild on change and restart the proxy on port 4142 (PI_PROXY_DEV_PORT to change)
 pnpm run check:all    # The gate: format, lint + type check, tests, build
 vp check --fix        # Format and apply lint fixes
-vp test               # Run all tests (conformance tests need provider credentials)
-vp run test:ci        # Unit and integration tests only
+vp test               # Offline tests (unit + integration): no real login, no network beyond 127.0.0.1
+pnpm run test:live    # Live conformance tests against real providers: uses your pi login and quota
 vp pack               # Build for npm (ESM + .d.ts)
 ```
 
 `check:all` (`scripts/gate.ts`) is the one definition of "green": the pre-commit hook, CI, and the release workflow all run it.
+
+Offline tests run with pi pointed at an empty agent directory and credential env vars removed (`test/setup/offline.ts`). Tests that need models or an upstream build them with `test/fixtures/agent-dir.ts` and the local mock provider in `test/fixtures/mock-provider.ts`.
 
 ### Tooling
 
