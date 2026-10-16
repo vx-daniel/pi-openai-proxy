@@ -419,9 +419,5 @@ export default defineConfig({
     deps: {
       neverBundle: ['@earendil-works/pi-ai', '@earendil-works/pi-coding-agent']
     }
-  },
-
-  staged: {
-    '*': 'vp check --fix'
   }
 })

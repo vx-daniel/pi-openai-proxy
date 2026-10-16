@@ -1,8 +1,8 @@
+# The lockfile must match package.json before it leaves the machine: CI installs it frozen. The
+# code itself was gated at commit time (pre-commit runs `check:all`), and CI gates it again.
 pnpm install --lockfile-only
 if ! git diff --quiet -- pnpm-lock.yaml; then
   echo "Lockfile is out of sync. Commit the updated lockfile before pushing:"
   git diff --stat -- pnpm-lock.yaml
   exit 1
 fi
-vp check
-vp run test:ci
