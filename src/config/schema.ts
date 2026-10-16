@@ -9,8 +9,12 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
-import { isRecord } from '@proxy/utils/guards'
+import { isLogLevel, type LogLevel } from '@logtape/logtape'
+import { proxyLogger } from '@proxy/logging'
+import { errorCode, isRecord } from '@proxy/utils/guards'
 import * as z from 'zod'
+
+const configLogger = proxyLogger('config')
 
 // ---------------------------------------------------------------------------
 // Types
@@ -59,6 +63,8 @@ export interface ProxyConfig {
   readonly customModels: readonly string[]
   /** Provider key -> custom public prefix label. Default prefix = provider key. */
   readonly providerPrefixes: Readonly<Record<string, string>>
+  /** Lowest log level the proxy writes (LogTape levels). Default: "info" */
+  readonly logLevel: LogLevel
   /** Zed editor sync settings. */
   readonly zed: ZedSyncConfig
 }
@@ -98,6 +104,7 @@ export const DEFAULT_CONFIG: Readonly<ProxyConfig> = {
   modelExposureMode: 'scoped',
   customModels: [],
   providerPrefixes: {},
+  logLevel: 'info',
   zed: {
     providerName: 'Pi Proxy',
     autoSync: false
@@ -158,6 +165,7 @@ export function normalizeConfig(raw: unknown): ProxyConfig {
   const rawRemoteImages = configObject['remoteImages']
   const rawPublicIdMode = configObject['publicModelIdMode']
   const rawExposureMode = configObject['modelExposureMode']
+  const rawLogLevel = configObject['logLevel']
   return {
     host: typeof rawHost === 'string' && rawHost.length > 0 ? rawHost : DEFAULT_CONFIG.host,
     port: clampInt(configObject['port'], 1, MAX_PORT, DEFAULT_CONFIG.port),
@@ -187,6 +195,10 @@ export function normalizeConfig(raw: unknown): ProxyConfig {
         : DEFAULT_CONFIG.modelExposureMode,
     customModels: normalizeStringArray(configObject['customModels']),
     providerPrefixes: normalizeStringRecord(configObject['providerPrefixes']),
+    logLevel:
+      typeof rawLogLevel === 'string' && isLogLevel(rawLogLevel)
+        ? rawLogLevel
+        : DEFAULT_CONFIG.logLevel,
     zed: parseZedSyncConfig(configObject['zed'])
   }
 }
@@ -196,6 +208,9 @@ function parseZedSyncConfig(raw: unknown): ZedSyncConfig {
   if (result.success) {
     return result.data
   }
+  configLogger.warn('Invalid zed settings in config at {fields}; using defaults', {
+    fields: result.error.issues.map((issue) => issue.path.join('.'))
+  })
   return ZedSyncConfigSchema.parse({})
 }
 
@@ -214,12 +229,36 @@ export function getConfigPath(): string {
 
 export function loadConfigFromFile(): ProxyConfig {
   const configPath = getConfigPath()
-  if (!existsSync(configPath)) return { ...DEFAULT_CONFIG }
-  try {
-    return normalizeConfig(JSON.parse(readFileSync(configPath, 'utf-8')))
-  } catch {
+  if (!existsSync(configPath)) {
+    configLogger.debug('No config file at {path}; using defaults', { path: configPath })
     return { ...DEFAULT_CONFIG }
   }
+  let text: string
+  try {
+    text = readFileSync(configPath, 'utf-8')
+  } catch (error) {
+    configLogger.warn('Could not read config file {path} ({code}); using defaults', {
+      path: configPath,
+      code: errorCode(error)
+    })
+    return { ...DEFAULT_CONFIG }
+  }
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    // Not the parser's message: it quotes the file, which can hold the auth token.
+    configLogger.warn('Config file {path} is not valid JSON; using defaults', {
+      path: configPath,
+      bytes: text.length
+    })
+    return { ...DEFAULT_CONFIG }
+  }
+  configLogger.debug('Read config file {path}', {
+    path: configPath,
+    fields: isRecord(raw) ? Object.keys(raw) : []
+  })
+  return normalizeConfig(raw)
 }
 
 export function saveConfigToFile(config: ProxyConfig): void {
@@ -230,7 +269,12 @@ export function saveConfigToFile(config: ProxyConfig): void {
     mkdirSync(dirname(configPath), { recursive: true })
     writeFileSync(tempPath, `${JSON.stringify(normalized, null, '\t')}\n`, 'utf-8')
     renameSync(tempPath, configPath)
-  } catch {
+    configLogger.debug('Saved config file {path}', { path: configPath })
+  } catch (error) {
+    configLogger.warn('Could not save config file {path} ({code}); changes were not written', {
+      path: configPath,
+      code: errorCode(error)
+    })
     if (existsSync(tempPath)) unlinkSync(tempPath)
   }
 }
@@ -249,6 +293,7 @@ export function configToEnv(config: ProxyConfig): Record<string, string> {
   env['PI_PROXY_REMOTE_IMAGES'] = String(config.remoteImages)
   env['PI_PROXY_MAX_BODY_SIZE'] = String(config.maxBodySizeMb * BYTES_PER_MB)
   env['PI_PROXY_UPSTREAM_TIMEOUT_MS'] = String(config.upstreamTimeoutSec * MS_PER_SECOND)
+  env['PI_PROXY_LOG_LEVEL'] = config.logLevel
   // Model exposure settings are read from the shared JSON config file at startup.
   // They are not passed as env vars because the proxy loads the config file directly.
   return env

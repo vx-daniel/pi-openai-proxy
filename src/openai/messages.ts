@@ -21,8 +21,11 @@ import type {
   ToolResultMessage,
   UserMessage
 } from '@earendil-works/pi-ai'
+import { proxyLogger } from '@proxy/logging'
 import type { OpenAIMessage } from '@proxy/openai/schemas'
 import * as z from 'zod'
+
+const messagesLogger = proxyLogger('openai', 'messages')
 
 // Tool-call arguments are JSON values (Pi 1.x types them as JsonObject), not arbitrary objects.
 const toolArgsSchema = z.record(z.string().trim(), z.json())
@@ -49,12 +52,14 @@ export type ConversionResult = ConversionSuccess | ConversionError
 export function convertMessages(messages: OpenAIMessage[]): ConversionResult {
   const systemParts: string[] = []
   const piMessages: Message[] = []
+  const roleCounts = { system: 0, developer: 0, user: 0, assistant: 0, tool: 0 }
 
   const toolCallNames = collectToolCallNames(messages)
 
   for (let messageIndex = 0; messageIndex < messages.length; messageIndex++) {
     const message = messages[messageIndex]
     if (message === undefined) continue
+    roleCounts[message.role]++
 
     if (message.role === 'system') {
       systemParts.push(message.content)
@@ -68,8 +73,14 @@ export function convertMessages(messages: OpenAIMessage[]): ConversionResult {
       const assistantMsg = convertAssistantMessage(message.content ?? null, message.tool_calls)
       piMessages.push(assistantMsg)
     } else {
-      const toolName = toolCallNames.get(message.tool_call_id) ?? ''
-      const toolMsg = convertToolMessage(message.content, message.tool_call_id, toolName)
+      const toolName = toolCallNames.get(message.tool_call_id)
+      if (toolName === undefined) {
+        messagesLogger.debug(
+          'Tool message {messageIndex} answers unknown tool call {toolCallId}; sending an empty tool name',
+          { messageIndex, toolCallId: message.tool_call_id }
+        )
+      }
+      const toolMsg = convertToolMessage(message.content, message.tool_call_id, toolName ?? '')
       piMessages.push(toolMsg)
     }
   }
@@ -81,6 +92,17 @@ export function convertMessages(messages: OpenAIMessage[]): ConversionResult {
   if (systemParts.length > 0) {
     context.systemPrompt = systemParts.join('\n\n')
   }
+
+  messagesLogger.debug(
+    'Converted {messageCount} messages to {piMessageCount} pi messages, merging {systemPartCount} system/developer parts',
+    {
+      messageCount: messages.length,
+      piMessageCount: piMessages.length,
+      systemPartCount: systemParts.length,
+      systemPromptChars: context.systemPrompt?.length ?? 0,
+      roleCounts
+    }
+  )
 
   return { ok: true, context }
 }
@@ -122,6 +144,7 @@ function convertUserMessage(content: UserContent, index: number): UserConversion
 
   // Multi-part content
   const parts: (TextContent | ImageContent)[] = []
+  let imageCount = 0
 
   for (let partIndex = 0; partIndex < content.length; partIndex++) {
     const part = content[partIndex]
@@ -135,12 +158,26 @@ function convertUserMessage(content: UserContent, index: number): UserConversion
       if (url.startsWith('data:')) {
         const result = parseAndValidateDataUri(url)
         if (!result.ok) {
+          messagesLogger.warn(
+            'Rejected image at messages[{messageIndex}].content[{partIndex}]: {reason}',
+            { messageIndex: index, partIndex, reason: result.message, uriChars: url.length }
+          )
           return {
             ok: false,
             message: `${result.message} at messages[${String(index)}].content[${String(partIndex)}]`,
             param: `messages[${String(index)}].content[${String(partIndex)}].image_url.url`
           }
         }
+        imageCount++
+        messagesLogger.debug(
+          'Image part at messages[{messageIndex}].content[{partIndex}]: {mimeType}, {base64Chars} base64 chars',
+          {
+            messageIndex: index,
+            partIndex,
+            mimeType: result.parsed.mimeType,
+            base64Chars: result.parsed.data.length
+          }
+        )
         parts.push({
           type: 'image',
           data: result.parsed.data,
@@ -148,6 +185,10 @@ function convertUserMessage(content: UserContent, index: number): UserConversion
         })
       } else {
         // Remote URLs disabled by default
+        messagesLogger.warn(
+          'Blocked remote image from {host} at messages[{messageIndex}].content[{partIndex}]',
+          { host: imageUrlHost(url), messageIndex: index, partIndex }
+        )
         return {
           ok: false,
           message: 'Remote image URLs are not supported. Use base64 data URIs instead.',
@@ -155,6 +196,10 @@ function convertUserMessage(content: UserContent, index: number): UserConversion
         }
       }
     } else {
+      messagesLogger.warn(
+        'Rejected unsupported content part type {partType} at messages[{messageIndex}].content[{partIndex}]',
+        { partType: part.type, messageIndex: index, partIndex }
+      )
       return {
         ok: false,
         message: `Unsupported content part type: '${part.type}'`,
@@ -162,6 +207,11 @@ function convertUserMessage(content: UserContent, index: number): UserConversion
       }
     }
   }
+
+  messagesLogger.trace(
+    'User message {messageIndex} has {partCount} content parts, {imageCount} images',
+    { messageIndex: index, partCount: parts.length, imageCount }
+  )
 
   return {
     ok: true,
@@ -196,9 +246,22 @@ function convertAssistantMessage(
         const parsed = toolArgsSchema.safeParse(JSON.parse(tc.function.arguments))
         if (parsed.success) {
           args = parsed.data
+        } else {
+          messagesLogger.warn(
+            'Arguments of history tool call {toolCallId} ({toolName}) are not a JSON object; sending empty arguments',
+            { toolCallId: tc.id, toolName: tc.function.name }
+          )
         }
       } catch {
         // Best-effort: keep empty args if parsing fails
+        messagesLogger.warn(
+          'Arguments of history tool call {toolCallId} ({toolName}) are not valid JSON; sending empty arguments',
+          {
+            toolCallId: tc.id,
+            toolName: tc.function.name,
+            argumentsChars: tc.function.arguments.length
+          }
+        )
       }
       content.push({
         type: 'toolCall',
@@ -244,6 +307,11 @@ function convertToolMessage(
 }
 
 // --- Helpers ---
+
+/** The host of a remote image URL, for logs: never the path or query, which may carry tokens. */
+function imageUrlHost(url: string): string {
+  return URL.canParse(url) ? new URL(url).host : '(unparseable URL)'
+}
 
 /**
  * Supported image MIME types for base64 data URIs.

@@ -10,8 +10,8 @@ import {
   type ModelRegistry,
   SettingsManager
 } from '@earendil-works/pi-coding-agent'
-import { loadConfigFromFile, type ProxyConfig } from '@victor-software-house/pi-openai-proxy/config'
-import type { ModelExposureConfig } from '@victor-software-house/pi-openai-proxy/exposure'
+import { loadConfigFromFile, type ProxyConfig } from '@vx-daniel/pi-openai-proxy/config'
+import type { ModelExposureConfig } from '@vx-daniel/pi-openai-proxy/exposure'
 
 export interface ProxyState {
   config: ProxyConfig

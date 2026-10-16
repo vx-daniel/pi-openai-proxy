@@ -1,45 +1,49 @@
 /**
- * The chat_request log line, through the real app.
+ * Request logging through the real app, at the most verbose level.
  *
  * Like the other chat-validation tests, this uses the first model the registry offers and returns
  * early when none is available (no credentials). It sends a request that the proxy rejects after
  * the model resolves and before any upstream call, so nothing leaves the machine.
  */
 
+import { resetSync } from '@logtape/logtape'
+import { configureLogging } from '@proxy/logging'
 import { getAvailableModels, initRegistry } from '@proxy/pi/registry'
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  test,
-  type MockInstance,
-  vi
-} from 'vite-plus/test'
+import type { ProxyEnv } from '@proxy/server/types'
+import type { Hono } from 'hono'
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'vite-plus/test'
 
-import { testApp } from '../helpers'
+import { testApp, testConfig } from '../helpers'
 
-let app: ReturnType<typeof testApp>
-let errorSpy: MockInstance<Console['error']>
+let app: Hono<ProxyEnv>
+let lines: string[] = []
 
 beforeAll(async () => {
   await initRegistry()
   app = testApp()
 })
 
+// Trace, the most verbose level: no log line at any level may carry message content.
 beforeEach(() => {
-  errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  lines = []
+  configureLogging({ level: 'trace', format: 'json', write: (line) => lines.push(line) })
 })
 
 afterEach(() => {
-  errorSpy.mockRestore()
+  resetSync()
 })
 
-function chatRequestEntries(): Record<string, unknown>[] {
-  return errorSpy.mock.calls
-    .map((call) => JSON.parse(String(call[0])) as Record<string, unknown>)
-    .filter((logLine) => logLine['event'] === 'chat_request')
+interface LogRecordJson {
+  logger: string
+  level: string
+  message: string
+  properties: Record<string, unknown>
+}
+
+function logged(logger: string): LogRecordJson[] {
+  return lines
+    .map((line) => JSON.parse(line) as LogRecordJson)
+    .filter((record) => record.logger === logger)
 }
 
 const REJECTED_TOOL = {
@@ -50,9 +54,10 @@ const REJECTED_TOOL = {
   }
 }
 
-describe('chat_request log line', () => {
-  // Catches the line not being written, or written with the wrong ids, once a model resolves.
-  test('is logged once with the requested and resolved model, even when the request is rejected later', async () => {
+describe('chat request logging', () => {
+  // Catches the chat line not being written, or written with the wrong ids, once a model resolves;
+  // and any log line, at any level, carrying the prompt.
+  test('logs the requested and resolved model once, with the request ids, and never the prompt', async () => {
     const first = getAvailableModels()[0]
     if (first === undefined) return
     const canonicalId = `${first.provider}/${first.id}`
@@ -69,22 +74,24 @@ describe('chat_request log line', () => {
     })
 
     expect(response.status).toBe(422)
-    const entries = chatRequestEntries()
-    expect(entries).toHaveLength(1)
-    expect(entries[0]).toMatchObject({
-      event: 'chat_request',
+    const chatLines = logged('pi-openai-proxy.server.chat').filter((record) =>
+      record.message.startsWith('Chat request for')
+    )
+    expect(chatLines).toHaveLength(1)
+    expect(chatLines[0]?.properties).toMatchObject({
       clientRequestId: 'client-abc',
+      requestId: response.headers.get('x-request-id'),
       requestedModel: canonicalId,
       model: canonicalId,
       provider: first.provider,
       stream: true
     })
-    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('this text must never be logged')
+    expect(lines.join('')).not.toContain('this text must never be logged')
   })
 
-  // Catches the line being logged for a model that never resolved: it would name a model that
-  // served nothing, and the 404 already says what was asked.
-  test('is not logged when the model is not found', async () => {
+  // Catches the chat line being logged for a model that never resolved: it would name a model
+  // that served nothing, and the 404 already says what was asked.
+  test('does not log a chat request when the model is not found', async () => {
     const response = await app.request('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -95,6 +102,44 @@ describe('chat_request log line', () => {
     })
 
     expect(response.status).toBe(404)
-    expect(chatRequestEntries()).toEqual([])
+    expect(
+      logged('pi-openai-proxy.server.chat').filter((record) =>
+        record.message.startsWith('Chat request for')
+      )
+    ).toEqual([])
+  })
+
+  // Catches a request or its response going unlogged, or the two lines not sharing the request id.
+  test('logs each request and its response with the same request id', async () => {
+    const response = await app.request('/v1/models')
+    const requestId = response.headers.get('x-request-id')
+
+    const http = logged('pi-openai-proxy.server.http')
+    expect(http.map((record) => record.properties['requestId'])).toEqual([requestId, requestId])
+    expect(http[1]?.properties).toMatchObject({ method: 'GET', path: '/v1/models', status: 200 })
+  })
+})
+
+describe('proxy auth logging', () => {
+  const configuredToken = 'notarealsecret-configured-token'
+  const wrongToken = 'notarealsecret-wrong-token'
+
+  // Catches a credential reaching the logs: neither the configured token nor the one a client sent
+  // may appear in any line, at any level, while the rejection itself is still logged.
+  test('logs a rejected token as a warning without the token or the header value', async () => {
+    const authApp = testApp({ ...testConfig(), proxyAuthToken: configuredToken })
+
+    const rejected = await authApp.request('/v1/models', {
+      headers: { Authorization: `Bearer ${wrongToken}` }
+    })
+    const accepted = await authApp.request('/v1/models', {
+      headers: { Authorization: `Bearer ${configuredToken}` }
+    })
+
+    expect([rejected.status, accepted.status]).toEqual([401, 200])
+    const authRecords = logged('pi-openai-proxy.server.auth')
+    expect(authRecords.some((record) => record.level === 'WARN')).toBe(true)
+    expect(lines.join('')).not.toContain(wrongToken)
+    expect(lines.join('')).not.toContain(configuredToken)
   })
 })

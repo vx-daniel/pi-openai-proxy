@@ -24,6 +24,7 @@
  * - if/then/else
  */
 
+import { proxyLogger } from '@proxy/logging'
 import { isRecord } from '@proxy/utils/guards'
 import { type TSchema, Type } from 'typebox'
 
@@ -55,6 +56,8 @@ const REJECTED_KEYWORDS = [
   'not'
 ] as const
 
+const schemaLogger = proxyLogger('openai', 'schema')
+
 const MAX_ANY_OF_BRANCHES = 10
 const NULLABLE_TYPE_ARRAY_LENGTH = 2
 
@@ -64,6 +67,19 @@ const NULLABLE_TYPE_ARRAY_LENGTH = 2
  * Returns a ConversionError for unsupported constructs.
  */
 export function jsonSchemaToTypebox(schema: unknown, path = ''): SchemaConversionResult {
+  const result = convertSchema(schema, path)
+  if (result.ok) {
+    schemaLogger.trace('Converted JSON Schema at {path}', { path: path || 'root' })
+  } else {
+    schemaLogger.debug('Rejected JSON Schema at {path}: {reason}', {
+      path: result.path || 'root',
+      reason: result.message
+    })
+  }
+  return result
+}
+
+function convertSchema(schema: unknown, path: string): SchemaConversionResult {
   if (!isRecord(schema)) {
     return {
       ok: false,
@@ -117,6 +133,10 @@ function findRejectedKeyword(
 ): SchemaConversionResult | undefined {
   for (const keyword of REJECTED_KEYWORDS) {
     if (schema[keyword] !== undefined) {
+      schemaLogger.debug('Unsupported JSON Schema keyword {keyword} at {path}', {
+        keyword,
+        path: path || 'root'
+      })
       return {
         ok: false,
         message: `Unsupported JSON Schema keyword '${keyword}' at ${path || 'root'}`,
@@ -205,7 +225,7 @@ function convertAnyOf(
   const converted: TSchema[] = []
   for (let branchIndex = 0; branchIndex < branches.length; branchIndex++) {
     const branchPath = `${path || 'root'}.anyOf[${String(branchIndex)}]`
-    const result = jsonSchemaToTypebox(branches[branchIndex], branchPath)
+    const result = convertSchema(branches[branchIndex], branchPath)
     if (!result.ok) {
       return result
     }
@@ -269,7 +289,7 @@ function convertNullableType(
 
   // Recurse with the inner type
   const innerSchema = { ...schema, type: innerType }
-  const innerResult = jsonSchemaToTypebox(innerSchema, path)
+  const innerResult = convertSchema(innerSchema, path)
   if (!innerResult.ok) {
     return innerResult
   }
@@ -321,7 +341,7 @@ function convertObject(
 
   for (const [key, propSchema] of Object.entries(rawProperties)) {
     const propPath = path.length > 0 ? `${path}.${key}` : key
-    const result = jsonSchemaToTypebox(propSchema, propPath)
+    const result = convertSchema(propSchema, propPath)
     if (!result.ok) {
       return result
     }
@@ -348,7 +368,7 @@ function convertArray(
   }
 
   const itemPath = path.length > 0 ? `${path}.items` : 'items'
-  const itemResult = jsonSchemaToTypebox(items, itemPath)
+  const itemResult = convertSchema(items, itemPath)
   if (!itemResult.ok) {
     return itemResult
   }

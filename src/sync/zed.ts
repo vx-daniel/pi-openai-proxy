@@ -9,8 +9,19 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+import { proxyLogger } from '@proxy/logging'
 import type { ExposedModel } from '@proxy/openai/model-exposure'
-import { applyEdits, type ModificationOptions, modify, parse } from 'jsonc-parser'
+import { errorCode } from '@proxy/utils/guards'
+import {
+  applyEdits,
+  type ModificationOptions,
+  modify,
+  type ParseError,
+  parse,
+  printParseErrorCode
+} from 'jsonc-parser'
+
+const zedLogger = proxyLogger('sync', 'zed')
 
 // ---------------------------------------------------------------------------
 // Types
@@ -62,24 +73,46 @@ export interface ZedSyncResult {
  * 3. $XDG_CONFIG_HOME/zed/settings.json (Linux XDG)
  */
 export function findZedSettings(): string | undefined {
+  const candidates: { source: string; settingsPath: string }[] = []
+
   const customDir = process.env.CUSTOM_DATA_DIR
   if (customDir !== undefined && customDir.length > 0) {
-    const settingsPath = resolve(customDir, 'settings.json')
-    if (existsSync(settingsPath)) return settingsPath
+    candidates.push({
+      source: 'CUSTOM_DATA_DIR',
+      settingsPath: resolve(customDir, 'settings.json')
+    })
   }
 
   const home = process.env.HOME
   if (home !== undefined && home.length > 0) {
-    const settingsPath = resolve(home, '.config', 'zed', 'settings.json')
-    if (existsSync(settingsPath)) return settingsPath
+    candidates.push({
+      source: 'HOME',
+      settingsPath: resolve(home, '.config', 'zed', 'settings.json')
+    })
   }
 
   const xdg = process.env.XDG_CONFIG_HOME
   if (xdg !== undefined && xdg.length > 0) {
-    const settingsPath = resolve(xdg, 'zed', 'settings.json')
-    if (existsSync(settingsPath)) return settingsPath
+    candidates.push({
+      source: 'XDG_CONFIG_HOME',
+      settingsPath: resolve(xdg, 'zed', 'settings.json')
+    })
   }
 
+  for (const { source, settingsPath } of candidates) {
+    if (existsSync(settingsPath)) {
+      zedLogger.debug('Found Zed settings at {settingsPath} (from {source})', {
+        settingsPath,
+        source
+      })
+      return settingsPath
+    }
+    zedLogger.debug('No Zed settings at {settingsPath} (from {source})', { settingsPath, source })
+  }
+
+  zedLogger.debug('Zed settings not found after checking {candidateCount} locations', {
+    candidateCount: candidates.length
+  })
   return undefined
 }
 
@@ -129,8 +162,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Returns the parsed model names, or an empty array if the path does not exist.
  */
 function readCurrentModelNames(text: string, providerName: string): string[] {
-  const root: unknown = parse(text)
-  if (!isRecord(root)) return []
+  const parseErrors: ParseError[] = []
+  // Zed accepts trailing commas; allowing them only silences those errors, the parsed value is the same.
+  const root: unknown = parse(text, parseErrors, { allowTrailingComma: true })
+  if (parseErrors.length > 0) {
+    const [firstError] = parseErrors
+    zedLogger.warn('Zed settings has {parseErrorCount} JSONC parse errors; reading what parsed', {
+      parseErrorCount: parseErrors.length,
+      firstErrorCode: firstError === undefined ? undefined : printParseErrorCode(firstError.error),
+      firstErrorOffset: firstError?.offset
+    })
+  }
+  if (!isRecord(root)) {
+    zedLogger.debug('Zed settings root is not an object; treating as no existing models')
+    return []
+  }
 
   const langModels: unknown = root['language_models']
   if (!isRecord(langModels)) return []
@@ -139,10 +185,16 @@ function readCurrentModelNames(text: string, providerName: string): string[] {
   if (!isRecord(compat)) return []
 
   const provider: unknown = compat[providerName]
-  if (!isRecord(provider)) return []
+  if (!isRecord(provider)) {
+    zedLogger.debug('No existing Zed provider block for {providerName}', { providerName })
+    return []
+  }
 
   const models: unknown = provider['available_models']
-  if (!Array.isArray(models)) return []
+  if (!Array.isArray(models)) {
+    zedLogger.debug('Zed provider {providerName} has no available_models array', { providerName })
+    return []
+  }
 
   const names: string[] = []
   for (const availableModel of models) {
@@ -181,36 +233,37 @@ function applyProviderBlock(
   return applyEdits(text, edits)
 }
 
-// ---------------------------------------------------------------------------
-// Public sync API
-// ---------------------------------------------------------------------------
-
-/**
- * Sync exposed models into Zed's settings.json.
- */
-export function syncToZed(
-  exposedModels: readonly ExposedModel[],
-  options: ZedSyncOptions
-): ZedSyncResult {
-  const configPath = findZedSettings()
-  if (configPath === undefined) {
-    return {
-      ok: false,
-      configPath: '',
-      added: 0,
-      removed: 0,
-      unchanged: 0,
-      summary: '',
-      error:
-        'Zed settings.json not found. Checked ~/.config/zed/settings.json and $XDG_CONFIG_HOME/zed/settings.json'
-    }
+/** Read the settings file, logging a failure before it propagates. */
+function readSettingsText(configPath: string): string {
+  try {
+    return readFileSync(configPath, 'utf-8')
+  } catch (error) {
+    zedLogger.error('Failed to read Zed settings {configPath} ({code})', {
+      configPath,
+      code: errorCode(error)
+    })
+    throw error
   }
+}
 
-  const originalText = readFileSync(configPath, 'utf-8')
-  const currentNames = new Set(readCurrentModelNames(originalText, options.providerName))
-  const zedModels = exposedModels.map(toZedModel)
-  const newNames = new Set(zedModels.map((zedModel) => zedModel.name))
+/** Write the settings file, logging a failure before it propagates. */
+function writeSettingsText(configPath: string, text: string): void {
+  try {
+    writeFileSync(configPath, text, 'utf-8')
+  } catch (error) {
+    zedLogger.error('Failed to write Zed settings {configPath} ({code})', {
+      configPath,
+      code: errorCode(error)
+    })
+    throw error
+  }
+}
 
+/** How the new model names differ from the ones already in Zed settings. */
+function countModelChanges(
+  currentNames: ReadonlySet<string>,
+  newNames: ReadonlySet<string>
+): { added: number; removed: number; unchanged: number } {
   let added = 0
   let removed = 0
   let unchanged = 0
@@ -227,6 +280,41 @@ export function syncToZed(
       removed += 1
     }
   }
+  return { added, removed, unchanged }
+}
+
+// ---------------------------------------------------------------------------
+// Public sync API
+// ---------------------------------------------------------------------------
+
+/**
+ * Sync exposed models into Zed's settings.json.
+ */
+export function syncToZed(
+  exposedModels: readonly ExposedModel[],
+  options: ZedSyncOptions
+): ZedSyncResult {
+  const configPath = findZedSettings()
+  if (configPath === undefined) {
+    zedLogger.warn('Zed sync skipped: settings.json not found')
+    return {
+      ok: false,
+      configPath: '',
+      added: 0,
+      removed: 0,
+      unchanged: 0,
+      summary: '',
+      error:
+        'Zed settings.json not found. Checked ~/.config/zed/settings.json and $XDG_CONFIG_HOME/zed/settings.json'
+    }
+  }
+
+  const originalText = readSettingsText(configPath)
+  const currentNames = new Set(readCurrentModelNames(originalText, options.providerName))
+  const zedModels = exposedModels.map(toZedModel)
+  const newNames = new Set(zedModels.map((zedModel) => zedModel.name))
+
+  const { added, removed, unchanged } = countModelChanges(currentNames, newNames)
 
   const parts: string[] = []
   if (added > 0) parts.push(`${String(added)} added`)
@@ -234,7 +322,18 @@ export function syncToZed(
   if (unchanged > 0) parts.push(`${String(unchanged)} unchanged`)
   const summary = parts.length > 0 ? parts.join(', ') : 'no changes'
 
+  const outcome = {
+    configPath,
+    providerName: options.providerName,
+    modelCount: zedModels.length,
+    added,
+    removed,
+    unchanged,
+    dryRun: options.dryRun
+  }
+
   if (options.dryRun) {
+    zedLogger.info('Zed sync dry run for {configPath}: {summary}', { ...outcome, summary })
     return {
       ok: true,
       configPath,
@@ -246,7 +345,12 @@ export function syncToZed(
   }
 
   const newText = applyProviderBlock(originalText, options.providerName, options.apiUrl, zedModels)
-  writeFileSync(configPath, newText, 'utf-8')
+  writeSettingsText(configPath, newText)
+  zedLogger.info('Wrote {modelCount} models to Zed settings {configPath}: {summary}', {
+    ...outcome,
+    summary,
+    bytesWritten: Buffer.byteLength(newText, 'utf-8')
+  })
 
   return {
     ok: true,

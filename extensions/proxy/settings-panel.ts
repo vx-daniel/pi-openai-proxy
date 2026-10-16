@@ -4,6 +4,7 @@
 
 import { type ExtensionCommandContext, getSettingsListTheme } from '@earendil-works/pi-coding-agent'
 import { Container, type SettingItem, SettingsList, Text } from '@earendil-works/pi-tui'
+import { getLogLevels, isLogLevel } from '@logtape/logtape'
 import {
   getConfigPath,
   loadConfigFromFile,
@@ -11,7 +12,8 @@ import {
   type ProxyConfig,
   type PublicModelIdMode,
   saveConfigToFile
-} from '@victor-software-house/pi-openai-proxy/config'
+} from '@vx-daniel/pi-openai-proxy/config'
+import { proxyLogger } from '@vx-daniel/pi-openai-proxy/logging'
 
 import { buildModelSelectorSubmenu } from './model-selector'
 import type { ProxyState } from './state'
@@ -28,6 +30,8 @@ const HEX_RADIX = 16
 const HEX_BYTE_WIDTH = 2
 /** Token characters shown in the auth setting description. */
 const AUTH_TOKEN_PREVIEW_LENGTH = 8
+
+const settingsLogger = proxyLogger('extension', 'settings')
 
 // --- Dynamic descriptions ---
 
@@ -81,6 +85,7 @@ const SETTING_DISPLAY_VALUES = {
   'remoteImages': (config: ProxyConfig) => (config.remoteImages ? 'on' : 'off'),
   'maxBodySizeMb': (config: ProxyConfig) => `${String(config.maxBodySizeMb)} MB`,
   'upstreamTimeoutSec': (config: ProxyConfig) => `${String(config.upstreamTimeoutSec)}s`,
+  'logLevel': (config: ProxyConfig) => config.logLevel,
   'publicModelIdMode': (config: ProxyConfig) => config.publicModelIdMode,
   'modelExposureMode': (config: ProxyConfig) => config.modelExposureMode,
   'customModels': customModelsDisplay,
@@ -101,10 +106,8 @@ function getDisplayValue(config: ProxyConfig, id: string): string {
   return isSettingId(id) ? SETTING_DISPLAY_VALUES[id](config) : ''
 }
 
-function buildSettingItems(state: ProxyState): SettingItem[] {
-  const { config } = state
+function serverSettingItems(config: ProxyConfig): SettingItem[] {
   return [
-    // --- Server ---
     {
       id: 'lifetime',
       label: 'Lifetime',
@@ -154,6 +157,20 @@ function buildSettingItems(state: ProxyState): SettingItem[] {
       currentValue: `${String(config.upstreamTimeoutSec)}s`,
       values: ['30s', '60s', '120s', '300s']
     },
+    {
+      id: 'logLevel',
+      label: 'Log level',
+      description: 'Lowest level the proxy logs (also the extension log, on next pi start)',
+      currentValue: config.logLevel,
+      values: [...getLogLevels()]
+    }
+  ]
+}
+
+function buildSettingItems(state: ProxyState): SettingItem[] {
+  const { config } = state
+  return [
+    ...serverSettingItems(config),
     // --- Model exposure ---
     {
       id: 'publicModelIdMode',
@@ -268,6 +285,7 @@ const CONFIG_UPDATERS: Record<Exclude<SettingId, 'authToken'>, ConfigUpdater> = 
     const sec = parsePositiveInt(value)
     return sec === undefined ? config : { ...config, upstreamTimeoutSec: sec }
   },
+  'logLevel': (config, value) => (isLogLevel(value) ? { ...config, logLevel: value } : config),
   'publicModelIdMode': (config, value) =>
     isPublicModelIdMode(value) ? { ...config, publicModelIdMode: value } : config,
   'modelExposureMode': (config, value) =>
@@ -301,9 +319,32 @@ function applySetting(state: ProxyState, id: string, value: string): string | un
     }
   } else if (isConfigUpdaterId(id)) {
     state.config = CONFIG_UPDATERS[id](state.config, value)
+  } else {
+    settingsLogger.warn('Unknown setting {settingId}; saving config unchanged', { settingId: id })
   }
   saveConfigToFile(state.config)
   state.config = loadConfigFromFile()
+  settingsLogger.debug('Saved config to {configPath}', { configPath: getConfigPath() })
+  const applied = getDisplayValue(state.config, id)
+  if (id === 'authToken') {
+    // The token itself is never logged: only whether auth is on, and whether a token was generated.
+    settingsLogger.info('Setting authToken changed: proxy auth {applied}', {
+      settingId: id,
+      applied,
+      tokenGenerated: generatedToken !== undefined
+    })
+  } else if (id === 'customModels') {
+    // Each toggle is logged by the model selector; this is the submenu closing.
+    settingsLogger.debug('Model selector closed: {applied}', { settingId: id, applied })
+  } else if (applied === value) {
+    settingsLogger.info('Setting {settingId} changed to {value}', { settingId: id, value })
+  } else {
+    settingsLogger.warn('Setting {settingId}: value {value} not applied as given; now {applied}', {
+      settingId: id,
+      value,
+      applied
+    })
+  }
   return generatedToken
 }
 

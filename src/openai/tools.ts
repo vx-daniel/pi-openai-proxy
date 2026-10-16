@@ -8,9 +8,12 @@
  */
 
 import type { Tool } from '@earendil-works/pi-ai'
+import { proxyLogger } from '@proxy/logging'
 import { jsonSchemaToTypebox } from '@proxy/openai/json-schema-to-typebox'
 import type { OpenAIFunctionTool } from '@proxy/openai/schemas'
 import { type TSchema, Type } from 'typebox'
+
+const toolsLogger = proxyLogger('openai', 'tools')
 
 export interface ToolConversionSuccess {
   readonly ok: true
@@ -47,6 +50,12 @@ export function convertTools(openaiTools: OpenAIFunctionTool[]): ToolConversionR
         `tools[${String(toolIndex)}].function.parameters`
       )
       if (!result.ok) {
+        toolsLogger.warn('Rejected parameters schema of tool {toolName} at {path}: {reason}', {
+          toolName: fn.name,
+          toolIndex,
+          path: result.path,
+          reason: result.message
+        })
         return {
           ok: false,
           message: result.message,
@@ -62,6 +71,12 @@ export function convertTools(openaiTools: OpenAIFunctionTool[]): ToolConversionR
       parameters
     })
   }
+
+  toolsLogger.debug('Converted {toolCount} tools', () => ({
+    toolCount: piTools.length,
+    toolNames: piTools.map((tool) => tool.name),
+    withoutParameters: openaiTools.filter((tool) => tool.function.parameters === undefined).length
+  }))
 
   return { ok: true, tools: piTools }
 }

@@ -1,19 +1,25 @@
 /**
- * Hono middleware: request ID injection, proxy auth, body size limits, structured logging.
+ * Hono middleware: request ID injection, proxy auth, body size limits, request logging.
  */
 
+import { withContext } from '@logtape/logtape'
 import type { ServerConfig } from '@proxy/config/env'
+import { proxyLogger } from '@proxy/logging'
 import { authenticationError, invalidRequest } from '@proxy/server/errors'
 import { HTTP_PAYLOAD_TOO_LARGE, HTTP_UNAUTHORIZED } from '@proxy/server/http-status'
-import { logDisconnect, logRequest, logResponse } from '@proxy/server/logging'
 import { generateRequestId } from '@proxy/server/request-id'
 import type { ProxyEnv } from '@proxy/server/types'
 import type { MiddlewareHandler } from 'hono'
 
+const httpLogger = proxyLogger('server', 'http')
+const authLogger = proxyLogger('server', 'auth')
+
 const BEARER_PREFIX = 'Bearer '
 
 /**
- * Inject request ID, upstream API key, and logging context into every request.
+ * Inject the request ID and upstream API key into every request, and log the request and its
+ * response. Everything downstream runs inside `withContext({ requestId, clientRequestId })`, so
+ * every log line a request causes carries its IDs without passing them around.
  */
 export function requestIdMiddleware(): MiddlewareHandler<ProxyEnv> {
   return async (context, next) => {
@@ -26,27 +32,30 @@ export function requestIdMiddleware(): MiddlewareHandler<ProxyEnv> {
     context.set('clientRequestId', clientRequestId)
     context.set('upstreamApiKey', upstreamApiKey)
 
-    logRequest({
-      requestId,
-      clientRequestId,
-      method: context.req.method,
-      path: context.req.path
-    })
-
     // Set response headers
     context.header('x-request-id', requestId)
     if (clientRequestId !== undefined) {
       context.header('x-client-request-id', clientRequestId)
     }
 
-    await next()
-
-    const duration = performance.now() - start
-    logResponse(
-      { requestId, clientRequestId, method: context.req.method, path: context.req.path },
-      context.res.status,
-      duration
-    )
+    const { method, path } = context.req
+    await withContext({ requestId, clientRequestId }, async () => {
+      httpLogger.info('{method} {path} received ({requestId})', {
+        method,
+        path,
+        requestId,
+        hasUpstreamApiKey: upstreamApiKey !== undefined
+      })
+      await next()
+      const status = context.res.status
+      httpLogger.info('{method} {path} answered {status} in {durationMs} ms ({requestId})', {
+        method,
+        path,
+        status,
+        durationMs: Math.round(performance.now() - start),
+        requestId
+      })
+    })
   }
 }
 
@@ -63,20 +72,33 @@ export function proxyAuthMiddleware(config: ServerConfig): MiddlewareHandler<Pro
 
     const authHeader = context.req.header('authorization')
     if (authHeader === undefined) {
+      authLogger.warn('Rejected {method} {path}: missing Authorization header', {
+        method: context.req.method,
+        path: context.req.path
+      })
       return context.json(authenticationError('Missing Authorization header'), HTTP_UNAUTHORIZED)
     }
 
-    const token = authHeader.startsWith(BEARER_PREFIX)
-      ? authHeader.slice(BEARER_PREFIX.length)
-      : undefined
+    const isBearer = authHeader.startsWith(BEARER_PREFIX)
+    const token = isBearer ? authHeader.slice(BEARER_PREFIX.length) : undefined
 
     if (token !== config.proxyAuthToken) {
+      // Never the header or token value: only whether the scheme was right.
+      authLogger.warn('Rejected {method} {path}: invalid proxy auth token', {
+        method: context.req.method,
+        path: context.req.path,
+        bearerScheme: isBearer
+      })
       return context.json(
         authenticationError('Invalid proxy authentication token'),
         HTTP_UNAUTHORIZED
       )
     }
 
+    authLogger.debug('Proxy auth accepted for {method} {path}', {
+      method: context.req.method,
+      path: context.req.path
+    })
     await next()
     return undefined
   }
@@ -94,11 +116,12 @@ export function disconnectMiddleware(): MiddlewareHandler<ProxyEnv> {
     // Listen for client disconnect via the request signal
     const reqSignal = context.req.raw.signal
     const onAbort = (): void => {
-      const requestId = context.get('requestId')
-      logDisconnect({
-        requestId,
+      // An abort listener runs outside the request's async context, so the IDs are passed here.
+      httpLogger.info('Client disconnected from {method} {path} ({requestId})', {
         method: context.req.method,
-        path: context.req.path
+        path: context.req.path,
+        requestId: context.get('requestId'),
+        clientRequestId: context.get('clientRequestId')
       })
       controller.abort()
     }
@@ -129,6 +152,10 @@ export function bodySizeLimitMiddleware(config: ServerConfig): MiddlewareHandler
     if (contentLength !== undefined) {
       const length = Number.parseInt(contentLength, 10)
       if (Number.isFinite(length) && length > config.maxBodySize) {
+        httpLogger.warn(
+          'Rejected {method} {path}: body of {contentLength} bytes exceeds limit of {maxBodySize}',
+          { method, path: context.req.path, contentLength: length, maxBodySize: config.maxBodySize }
+        )
         return context.json(
           invalidRequest(
             `Request body too large. Maximum size: ${String(config.maxBodySize)} bytes`

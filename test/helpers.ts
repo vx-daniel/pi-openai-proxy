@@ -99,7 +99,8 @@ export function testConfig(): ServerConfig {
     publicModelIdMode: 'collision-prefixed',
     modelExposureMode: 'scoped',
     customModels: [],
-    providerPrefixes: {}
+    providerPrefixes: {},
+    logLevel: 'info'
   }
 }
 

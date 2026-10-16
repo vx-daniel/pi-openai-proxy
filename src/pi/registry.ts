@@ -11,6 +11,9 @@
 
 import type { Api, Model } from '@earendil-works/pi-ai'
 import { ModelRuntime, SettingsManager } from '@earendil-works/pi-coding-agent'
+import { proxyLogger } from '@proxy/logging'
+
+const registryLogger = proxyLogger('pi', 'registry')
 
 let runtime: ModelRuntime | undefined
 let settingsManager: SettingsManager | undefined
@@ -23,9 +26,21 @@ export type RequestAuthResult = { ok: true } | { ok: false; error: string }
  * Returns the load error if models.json failed to parse, or undefined on success.
  */
 export async function initRegistry(): Promise<string | undefined> {
+  const cwd = process.cwd()
   runtime = await ModelRuntime.create()
-  settingsManager = SettingsManager.create(process.cwd())
-  return runtime.getError()
+  settingsManager = SettingsManager.create(cwd)
+  const loadError = runtime.getError()
+  if (loadError !== undefined) {
+    registryLogger.warn('models.json failed to load; using built-in models only: {error}', {
+      error: loadError
+    })
+  }
+  registryLogger.info('Model runtime ready with {availableModelCount} available models', {
+    availableModelCount: runtime.getAvailableSnapshot().length,
+    settingsCwd: cwd,
+    modelsJsonLoaded: loadError === undefined
+  })
+  return loadError
 }
 
 /** The initialized model runtime, which also runs completions (see `src/pi/complete.ts`). */
@@ -63,14 +78,32 @@ export function getAvailableModels(): Model<Api>[] {
  * before starting a response, instead of failing mid-stream with a less actionable error.
  */
 export async function getRequestAuth(model: Model<Api>): Promise<RequestAuthResult> {
+  const { provider, id: modelId } = model
   try {
     const credentials = await getRuntime().getAuth(model)
     if (credentials === undefined) {
+      registryLogger.debug('No credentials configured for provider {provider}', {
+        provider,
+        modelId,
+        credentialsResolved: false
+      })
       return { ok: false, error: `no credentials configured for provider '${model.provider}'` }
     }
+    registryLogger.debug('Credentials resolved for provider {provider}', {
+      provider,
+      modelId,
+      credentialsResolved: true
+    })
     return { ok: true }
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    const message = error instanceof Error ? error.message : String(error)
+    registryLogger.warn('Credential resolution failed for provider {provider}: {error}', {
+      provider,
+      modelId,
+      credentialsResolved: false,
+      error: message
+    })
+    return { ok: false, error: message }
   }
 }
 
@@ -85,5 +118,10 @@ export async function getRequestAuth(model: Model<Api>): Promise<RequestAuthResu
 export async function getEnabledModels(): Promise<readonly string[] | undefined> {
   const manager = getSettingsManager()
   await manager.reload()
-  return manager.getEnabledModels()
+  const enabledModels = manager.getEnabledModels()
+  registryLogger.debug('Read enabledModels from pi settings: {enabledModelCount} patterns', {
+    enabledModelCount: enabledModels?.length ?? 0,
+    filterConfigured: enabledModels !== undefined && enabledModels.length > 0
+  })
+  return enabledModels
 }

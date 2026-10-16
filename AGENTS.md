@@ -58,6 +58,7 @@ For detailed rationale and edge cases, defer to [`PLAN.md`](PLAN.md) instead of 
 - Use repo type guards such as `isRecord()` instead of ad-hoc unsafe narrowing.
 - Respect strict TS settings, especially `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, and `noPropertyAccessFromIndexSignature`.
 - `process.env` is typed via `src/env.d.ts`; prefer dot notation.
+- Log with LogTape, never `console`: `proxyLogger(...)` from `@proxy/logging` (extension: `@vx-daniel/pi-openai-proxy/logging`), using a category and level from the header of `src/logging/index.ts`. Message templates take `{placeholders}`, not template literals. Never log message content, tool arguments, image data, or credentials.
 
 ## Verification workflow
 

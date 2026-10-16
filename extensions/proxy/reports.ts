@@ -3,13 +3,16 @@
  */
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent'
-import { loadConfigFromFile } from '@victor-software-house/pi-openai-proxy/config'
-import { computeModelExposure } from '@victor-software-house/pi-openai-proxy/exposure'
+import { loadConfigFromFile } from '@vx-daniel/pi-openai-proxy/config'
+import { computeModelExposure } from '@vx-daniel/pi-openai-proxy/exposure'
+import { proxyLogger } from '@vx-daniel/pi-openai-proxy/logging'
 
 import { buildExposureConfig, getAvailableModels, getEnabledModels, type ProxyState } from './state'
 
 /** How many exposed public IDs `/proxy show` lists before summarizing the rest. */
 const EXPOSED_PREVIEW_COUNT = 5
+
+const reportsLogger = proxyLogger('extension', 'reports')
 
 // --- /proxy show ---
 
@@ -65,8 +68,16 @@ export async function showConfig(state: ProxyState, context: ExtensionContext): 
   } else if (outcome.ok) {
     exposureLines.push('exposed: none')
   } else {
+    reportsLogger.warn('Model exposure error in /proxy show: {message}', {
+      message: outcome.message
+    })
     exposureLines.push(`error: ${outcome.message}`)
   }
+  reportsLogger.debug('/proxy show: {availableCount} available, {exposedCount} exposed', {
+    availableCount: models.length,
+    exposedCount: outcome.ok ? outcome.models.length : 0,
+    exposureMode: config.modelExposureMode
+  })
 
   context.ui.notify(`${serverLines.join(' | ')}\n${exposureLines.join(' | ')}`, 'info')
 }
@@ -79,10 +90,17 @@ export async function showModels(state: ProxyState, context: ExtensionContext): 
   const outcome = computeModelExposure(models, await buildExposureConfig(state))
 
   if (!outcome.ok) {
+    reportsLogger.warn('Model exposure error in /proxy models: {message}', {
+      message: outcome.message
+    })
     context.ui.notify(`Model exposure error: ${outcome.message}`, 'warning')
     return
   }
 
+  reportsLogger.debug('/proxy models: {availableCount} available, {exposedCount} exposed', {
+    availableCount: models.length,
+    exposedCount: outcome.models.length
+  })
   if (outcome.models.length === 0) {
     context.ui.notify('No models exposed. Check /proxy verify for details.', 'info')
     return
@@ -146,6 +164,20 @@ export async function verifyExposure(state: ProxyState, context: ExtensionContex
   const outcome = computeModelExposure(models, await buildExposureConfig(state))
   if (!outcome.ok) {
     issues.push(outcome.message)
+  }
+
+  reportsLogger.debug(
+    'Verify: {availableCount} available, {exposedCount} exposed, {issueCount} issue(s)',
+    {
+      availableCount: models.length,
+      exposedCount: outcome.ok ? outcome.models.length : 0,
+      issueCount: issues.length,
+      exposureMode: config.modelExposureMode,
+      customModelCount: config.customModels.length
+    }
+  )
+  for (const issue of issues) {
+    reportsLogger.warn('Verify found an issue: {issue}', { issue })
   }
 
   if (issues.length === 0) {

@@ -435,7 +435,7 @@ following are intentionally omitted:
 
 Upstream overload is handled reactively:
 - `mapUpstreamError()` detects rate limit (429) and overload (503/529) patterns
-- A structured `upstream_overload` warn-level log is emitted for these events
+- A warning-level `server.chat` log line ("Upstream overloaded") is emitted for these events
 - The mapped error propagates to the client as an OpenAI-style error response
 
 If the proxy is deployed in a multi-client scenario (e.g., shared team proxy), resilience
@@ -711,13 +711,15 @@ src/
 ├── config/
 │   ├── schema.ts         -- ProxyConfig type, defaults, JSON I/O (exported via ./config)
 │   └── env.ts            -- ServerConfig from file + env + CLI overrides
+├── logging/
+│   └── index.ts          -- LogTape setup, categories, level guide, redaction (exported via ./logging)
 ├── server/
 │   ├── app.ts            -- Hono app assembly (middleware + routes)
 │   ├── routes.ts         -- GET /v1/models, GET /v1/models/:model, POST /v1/chat/completions
 │   ├── middleware.ts     -- request-id, proxy-auth, body size limit, disconnect detection
 │   ├── errors.ts         -- OpenAI-style error helpers
-│   ├── logging.ts        -- structured JSON logging
 │   ├── request-id.ts     -- piproxy-{random} generation
+│   ├── http-status.ts    -- named HTTP status codes
 │   └── types.ts          -- Hono ProxyEnv type
 ├── openai/
 │   ├── schemas.ts              -- Zod v4 request schemas
@@ -960,16 +962,21 @@ Recommendation:
 
 ## Observability
 
+Logging is LogTape (`src/logging/index.ts`, whose header defines the categories, the level guide and
+what must never be logged). The CLI configures stderr output (pretty on a TTY, JSON Lines
+otherwise) at `--log-level` / `PI_PROXY_LOG_LEVEL` / `logLevel` (default `info`); the pi extension
+logs to a file only when `PI_PROXY_EXTENSION_LOG_FILE` is set.
+
 Minimum production observability:
 
-- generated proxy request ID
+- generated proxy request ID, carried by every log line a request causes (`withContext`)
 - accepted `X-Client-Request-Id`
 - upstream request ID capture where available
-- structured request logs
-- a `chat_request` log line, written once the model has resolved, with the requested model, the
-  resolved canonical `provider/id`, the provider and the stream mode (ids and flags only: never
-  message content or credentials; not written when the model is not found)
-- latency logging
+- one `server.http` line per request and per response (status, duration)
+- a `server.chat` "Chat request for … resolved to …" line, written once the model has resolved,
+  with the requested model, the resolved canonical `provider/id`, the provider and the stream mode
+  (ids and flags only: never message content or credentials; not written when the model is not
+  found)
 - disconnect and abort logging
 - usage logging when available
 

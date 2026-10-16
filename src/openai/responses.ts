@@ -14,6 +14,9 @@ import type {
   ToolCall,
   Usage
 } from '@earendil-works/pi-ai'
+import { proxyLogger } from '@proxy/logging'
+
+const responsesLogger = proxyLogger('openai', 'responses')
 
 const MS_PER_SECOND = 1000
 
@@ -134,6 +137,21 @@ export function buildChatCompletion(
     }
   }))
 
+  const finishReason = mapFinishReason(message.stopReason)
+  const usage = mapUsage(message.usage)
+  responsesLogger.debug('Built chat completion: {finishReason}, {totalTokens} tokens', {
+    model: canonicalModelId,
+    finishReason,
+    stopReason: message.stopReason,
+    textChars: textContent?.length ?? 0,
+    toolCallCount: toolCalls.length,
+    promptTokens: usage.prompt_tokens,
+    completionTokens: usage.completion_tokens,
+    totalTokens: usage.total_tokens,
+    cacheReadTokens: message.usage.cacheRead,
+    cacheWriteTokens: message.usage.cacheWrite
+  })
+
   const messageBody: OpenAIChatCompletionChoice['message'] =
     toolCalls.length > 0
       ? { role: 'assistant', content: textContent, tool_calls: toolCalls }
@@ -149,10 +167,10 @@ export function buildChatCompletion(
       {
         index: 0,
         message: messageBody,
-        finish_reason: mapFinishReason(message.stopReason)
+        finish_reason: finishReason
       }
     ],
-    usage: mapUsage(message.usage),
+    usage,
     x_pi: {
       cost: message.usage.cost,
       cache_read_tokens: message.usage.cacheRead,
