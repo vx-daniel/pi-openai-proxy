@@ -35,7 +35,18 @@ export interface MockProvider {
 }
 
 const HTTP_OK = 200
+const HTTP_BAD_REQUEST = 400
 const HTTP_NOT_FOUND = 404
+
+/** The body as JSON, the raw text when it is not JSON, or undefined when empty. */
+function parseBody(text: string): unknown {
+  if (text === '') return undefined
+  try {
+    return JSON.parse(text)
+  } catch {
+    return text
+  }
+}
 
 /** Start the mock on a free port. `replies` maps a model ID to how requests for it are answered. */
 export async function startMockProvider(
@@ -48,9 +59,16 @@ export async function startMockProvider(
       text += part.toString()
     })
     incoming.on('end', () => {
-      const body: unknown = text === '' ? undefined : JSON.parse(text)
+      const body = parseBody(text)
       const request: MockRequest = { path: incoming.url ?? '', headers: incoming.headers, body }
       requests.push(request)
+      // Recorded either way, so a test can see what pi sent; but a provider would refuse it.
+      if (typeof body === 'string') {
+        void httpError(HTTP_BAD_REQUEST, {
+          error: { message: 'mock got a body that is not JSON' }
+        })(response, request)
+        return
+      }
       const model = isRecord(body) && typeof body['model'] === 'string' ? body['model'] : ''
       const reply = replies[model]
       if (reply === undefined) {

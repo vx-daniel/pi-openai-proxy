@@ -410,7 +410,7 @@ export default defineConfig({
           setupFiles: ['test/setup/offline.ts']
         }
       },
-      ...(process.env['PI_PROXY_LIVE_TESTS'] === '1'
+      ...(process.env.PI_PROXY_LIVE_TESTS === '1'
         ? [{ extends: true, test: { name: 'live', include: ['test/conformance/**/*.test.ts'] } }]
         : [])
     ]

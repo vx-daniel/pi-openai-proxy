@@ -16,8 +16,17 @@ import { join } from 'node:path'
 
 import { afterAll } from 'vite-plus/test'
 
-/** pi reads provider credentials from variables named like these (`ANTHROPIC_API_KEY`, …). */
-const CREDENTIAL_VARIABLE = /(?:_API_KEY|_TOKEN|_ACCESS_KEY|_ACCESS_KEY_ID|_SECRET_ACCESS_KEY)$/
+/**
+ * What pi reads credentials from (`pi-ai/dist/env-api-keys.js`): `<PROVIDER>_API_KEY` and
+ * `*_TOKEN` variables, plus ambient cloud credentials that are not key-shaped. Amazon Bedrock
+ * counts as configured from `AWS_PROFILE`, `AWS_BEARER_TOKEN_BEDROCK`, container or web-identity
+ * variables; Vertex from `GOOGLE_APPLICATION_CREDENTIALS` (or the gcloud ADC file) plus
+ * `GOOGLE_CLOUD_PROJECT`/`GCLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`; Anthropic federation from
+ * `ANTHROPIC_*`. Whole prefixes go, so a variable pi adds later in those families goes too.
+ * `test/unit/offline-isolation.test.ts` fails if any provider still counts as configured.
+ */
+const CREDENTIAL_VARIABLE =
+  /(?:_API_KEY|_TOKEN|_ACCESS_KEY|_ACCESS_KEY_ID|_SECRET_ACCESS_KEY)$|^(?:ANTHROPIC|AWS|AZURE|GOOGLE|GCLOUD|CLOUDSDK)_/
 
 // Removed for good, not stubbed: `vi.unstubAllEnvs()` in a test would put a stubbed one back.
 for (const variableName of Object.keys(process.env)) {
