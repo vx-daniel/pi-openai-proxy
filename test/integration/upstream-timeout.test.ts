@@ -91,7 +91,9 @@ describe('upstream timeout', () => {
     expect(await complete.json()).toMatchObject({ error: { code: 'timeout' } })
 
     const streamed = await (await chat('stall', true)).text()
-    expect(streamed).toContain('Upstream timeout: the provider sent nothing for 1 s')
+    expect(streamed).toContain(
+      `data: ${JSON.stringify({ error: { message: 'Upstream request timed out', type: 'server_error', param: null, code: 'timeout' } })}\n\n`
+    )
     expect(streamed.endsWith('data: [DONE]\n\n')).toBe(true)
   })
 

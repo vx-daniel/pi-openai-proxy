@@ -744,13 +744,28 @@ Use an OpenAI-style shape:
 - `401` proxy auth failure or no upstream credential for target provider
 - `404` model not found
 - `422` unsupported parameter, unsupported content part, unsupported tool schema
-- `429` upstream rate limit
+- `429` upstream rate limit (`rate_limit`)
 - `500` internal proxy failure
-- `502` malformed upstream/provider response
-- `503` provider unavailable or overloaded
-- `504` upstream timeout: the provider sent nothing for `upstreamTimeoutMs` (an idle timeout that
-  restarts on every upstream event, not a cap on the call; `src/pi/upstream-idle.ts`). A stream
-  that has already started ends with an error event naming the timeout instead.
+- `502` upstream auth failure (`upstream_auth_error`), or any other upstream failure
+  (`upstream_error`)
+- `503` provider unavailable (`provider_unavailable`, upstream 503) or overloaded
+  (`provider_overloaded`, upstream 529)
+- `504` upstream timeout (`timeout`): an upstream 408 or 504, or the provider sent nothing for
+  `upstreamTimeoutMs` (an idle timeout that restarts on every upstream event, not a cap on the call;
+  `src/pi/upstream-idle.ts`)
+
+Upstream failures (`mapUpstreamError`, `src/server/errors.ts`): pi reports a failure as text, with
+no structured status (`onResponse` fires only for successful responses). The provider's HTTP status
+is read from the fixed positions pi 1.3.0's messages put it in: leading (`429: {…}`,
+`429 {…}`), after a label (`OpenAI API error (429): …`), Google's `got status: 429.` or its error
+body's `error.code`. When a status is found it decides; the wording (`rate limit`,
+`too many requests`, `timed out`, `overloaded`, `service unavailable`, …) is consulted only when no
+status is reported (Bedrock, network failures, the proxy's own idle timeout), and a number elsewhere
+in the text never counts (#42). The client gets a fixed message and code, never the upstream text.
+
+A stream that has already started cannot change its status (it is `200`): it ends with an error
+event carrying the same mapped `{ message, type, param, code }` as the non-streaming answer, then
+`[DONE]` (#54). The raw upstream text is logged at debug only, in both paths.
 
 Error rules:
 

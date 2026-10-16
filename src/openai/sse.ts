@@ -14,6 +14,7 @@
 import type { AssistantMessageEvent, Usage } from '@earendil-works/pi-ai'
 import { proxyLogger } from '@proxy/logging'
 import { mapFinishReason, mapUsage } from '@proxy/openai/responses'
+import { mapUpstreamError } from '@proxy/server/errors'
 
 const sseLogger = proxyLogger('openai', 'sse')
 
@@ -171,18 +172,14 @@ function encodeToolCallDelta(
   return []
 }
 
+/**
+ * The error frame for an upstream failure, with the same status mapping and fixed text as a
+ * non-streaming answer: the upstream message can quote the request, a key or an account, so it
+ * stays in the debug log (logUpstreamStreamError) and never reaches the client.
+ */
 function encodeUpstreamError(errorMessage: string | undefined): string[] {
-  // Surface upstream errors as SSE error frames instead of silent stop.
-  // Write an error data frame so the client sees the failure.
-  const errorChunk = JSON.stringify({
-    error: {
-      message: errorMessage ?? 'Upstream provider error',
-      type: 'server_error',
-      param: null,
-      code: 'upstream_error'
-    }
-  })
-  return [`data: ${errorChunk}\n\n`, encodeDone()]
+  const { body } = mapUpstreamError(new Error(errorMessage ?? ''))
+  return [`data: ${JSON.stringify(body)}\n\n`, encodeDone()]
 }
 
 /**
@@ -238,7 +235,10 @@ function logUpstreamStreamError(event: Extract<AssistantMessageEvent, { type: 'e
   if (event.reason === 'aborted') {
     sseLogger.warn('Upstream stream aborted', { stopReason: event.reason })
   } else {
-    sseLogger.error('Upstream error inside stream ({stopReason})', { stopReason: event.reason })
+    sseLogger.error('Upstream error inside stream ({stopReason}): {code}', {
+      stopReason: event.reason,
+      code: mapUpstreamError(new Error(event.error.errorMessage ?? '')).body.error.code
+    })
   }
   const detail = event.error.errorMessage
   if (detail !== undefined) {
