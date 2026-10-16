@@ -24,9 +24,10 @@ name: Claude PR Review
 # `CLAUDE_CODE_OAUTH_TOKEN` whoever wrote the pull request; the `pull_request` trigger never gave a fork's
 # run secrets.
 #
-# PROJECT CONVENTIONS ARE READ, NOT RESTATED. The prompt sends the reviewer to `AGENTS.md` (the repo's
-# always-on rules) and `PLAN.md` (API compatibility policy and security boundaries), so the review enforces
-# what this project documents rather than a generic checklist.
+# PROJECT CONVENTIONS ARE READ, NOT RESTATED. `CLAUDE.md` is a symlink to `AGENTS.md` (the repo's always-on
+# rules), so Claude Code auto-loads them; the prompt also sends the reviewer to `PLAN.md` (API compatibility
+# policy and security boundaries), so the review enforces what this project documents rather than a generic
+# checklist.
 #
 # SELF-CONTAINED ON PURPOSE. This is not a thin caller delegating to a shared reusable workflow: that
 # arrangement only runs where the shared repository is reachable. The cost of inlining is that improvements
