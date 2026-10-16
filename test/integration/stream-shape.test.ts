@@ -24,19 +24,30 @@ let mock: MockProvider
 let agentDir: FixtureAgentDir
 
 beforeAll(async () => {
+  const weatherCall = toolCallChunks(0, {
+    id: 'call_a',
+    name: 'get_weather',
+    argumentParts: ['{"city":', '"Oslo"}']
+  })
+  const timeCall = toolCallChunks(1, {
+    id: 'call_b',
+    name: 'get_time',
+    argumentParts: ['{"zone":', '"CET"}']
+  })
   mock = await startMockProvider({
     'two-tools': sse([
-      ...toolCallChunks(0, {
-        id: 'call_a',
-        name: 'get_weather',
-        argumentParts: ['{"city":', '"Oslo"}']
-      }),
-      ...toolCallChunks(1, {
-        id: 'call_b',
-        name: 'get_time',
-        argumentParts: ['{"zone":', '"CET"}']
-      }),
+      ...weatherCall,
+      ...timeCall,
       finishChunk('tool_calls', { prompt_tokens: 9, completion_tokens: 4 })
+    ]),
+    // Both calls opened, then the argument fragments: OpenAI's format allows this, since each
+    // fragment names its call by index.
+    'interleaved-tools': sse([
+      ...weatherCall.slice(0, 1),
+      ...timeCall.slice(0, 1),
+      ...weatherCall.slice(1),
+      ...timeCall.slice(1),
+      finishChunk('tool_calls')
     ]),
     'text': sse([
       ...textChunks('Hel', 'lo'),
@@ -150,6 +161,47 @@ describe('streamed chat completions', () => {
           prompt_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 }
         }
       })
+    ])
+  })
+
+  // Catches argument fragments attached to the most recently opened call instead of their own:
+  // the sequential test above cannot, since each call there is complete before the next opens.
+  test('interleaved fragments of two tool calls each keep their own index', async () => {
+    const { requestId, chunks } = await streamed('interleaved-tools', false)
+    const of = (fields: Record<string, unknown>): unknown =>
+      chunk(requestId, 'interleaved-tools', fields)
+
+    expect(chunks).toEqual([
+      of(delta({ role: 'assistant' })),
+      of(
+        delta({
+          tool_calls: [
+            {
+              index: 0,
+              id: 'call_a',
+              type: 'function',
+              function: { name: 'get_weather', arguments: '' }
+            }
+          ]
+        })
+      ),
+      of(delta({ tool_calls: [{ index: 0, function: { arguments: '{"city":' } }] })),
+      of(
+        delta({
+          tool_calls: [
+            {
+              index: 1,
+              id: 'call_b',
+              type: 'function',
+              function: { name: 'get_time', arguments: '' }
+            }
+          ]
+        })
+      ),
+      of(delta({ tool_calls: [{ index: 1, function: { arguments: '{"zone":' } }] })),
+      of(delta({ tool_calls: [{ index: 0, function: { arguments: '"Oslo"}' } }] })),
+      of(delta({ tool_calls: [{ index: 1, function: { arguments: '"CET"}' } }] })),
+      of(delta({}, 'tool_calls'))
     ])
   })
 
