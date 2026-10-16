@@ -739,7 +739,7 @@ async function openUpstream(
     logUpstreamThrow(call, error)
     throw error
   }
-  if (idle !== undefined) watchUpstreamActivity(eventStream, idle)
+  if (idle !== undefined) watchUpstreamActivity(eventStream, idle, options.signal)
   // Resolves with the final message once the stream ends with done or error; it never rejects.
   void eventStream.result().then((message) => logUpstreamResult(call, message))
   return eventStream

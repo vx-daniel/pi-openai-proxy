@@ -19,11 +19,11 @@ import { afterAll, beforeAll, describe, expect, test, vi } from 'vite-plus/test'
 
 import { testApp, testConfig } from '../helpers'
 
-/** Shorter than the whole steady answer, longer than the gap between its chunks. */
-const IDLE_TIMEOUT_MS = 400
+/** Shorter than the whole steady answer, ten times the gap between its chunks. */
+const IDLE_TIMEOUT_MS = 1000
 const CHUNK_INTERVAL_MS = 100
-/** 10 chunks 100 ms apart: about 1 s in total, well past the 400 ms timeout. */
-const STEADY_CHUNKS = 10
+/** 15 chunks 100 ms apart: about 1.5 s in total, past the 1 s timeout. */
+const STEADY_CHUNKS = 15
 
 let server: Server
 let agentDir = ''
@@ -38,8 +38,12 @@ function chunk(content: string, finishReason: string | null): string {
   })}\n\n`
 }
 
-/** `steady` streams a chunk every 100 ms, then stops; `stall` sends one chunk and goes quiet. */
+/**
+ * `steady` streams a chunk every 100 ms, then stops; `stall` sends one chunk and goes quiet;
+ * `silent` never answers at all, not even with headers.
+ */
 async function answer(model: string, response: ServerResponse): Promise<void> {
+  if (model === 'silent') return
   response.writeHead(200, { 'content-type': 'text/event-stream' })
   if (model === 'stall') {
     response.write(chunk('x', null))
@@ -79,7 +83,7 @@ beforeAll(async () => {
           baseUrl: `http://127.0.0.1:${String(port)}/v1`,
           api: 'openai-completions',
           apiKey: 'notarealsecret-timeout-key',
-          models: [{ id: 'steady' }, { id: 'stall' }]
+          models: [{ id: 'steady' }, { id: 'stall' }, { id: 'silent' }]
         }
       }
     })
@@ -134,7 +138,15 @@ describe('upstream timeout', () => {
     expect(await complete.json()).toMatchObject({ error: { code: 'timeout' } })
 
     const streamed = await (await chat('stall', true)).text()
-    expect(streamed).toContain('Upstream timeout: the provider sent nothing for 0 s')
+    expect(streamed).toContain('Upstream timeout: the provider sent nothing for 1 s')
     expect(streamed.endsWith('data: [DONE]\n\n')).toBe(true)
+  })
+
+  // Catches the case the old whole-call timeout covered: a provider that never responds must still
+  // be timed out, though no event ever restarts the wait.
+  test('times out a provider that never answers', async () => {
+    const complete = await chat('silent', false)
+    expect(complete.status).toBe(504)
+    expect(await complete.json()).toMatchObject({ error: { code: 'timeout' } })
   })
 })

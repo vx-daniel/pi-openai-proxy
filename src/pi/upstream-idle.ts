@@ -28,6 +28,8 @@ export function startUpstreamIdleTimeout(idleMs: number): UpstreamIdleTimeout {
       new DOMException(`No data from the provider for ${String(idleMs)} ms`, 'TimeoutError')
     )
   }, idleMs)
+  // A pending upstream call must not keep the process alive on shutdown.
+  timer.unref()
   return {
     signal: controller.signal,
     idleMs,
@@ -43,7 +45,11 @@ export function startUpstreamIdleTimeout(idleMs: number): UpstreamIdleTimeout {
 
 /** What a caller sees when the idle timeout ended the call; "timeout" maps it to HTTP 504. */
 export function idleTimeoutMessage(idleMs: number): string {
-  return `Upstream timeout: the provider sent nothing for ${String(Math.round(idleMs / MS_PER_SECOND))} s`
+  const duration =
+    idleMs < MS_PER_SECOND
+      ? `${String(idleMs)} ms`
+      : `${String(Math.round(idleMs / MS_PER_SECOND))} s`
+  return `Upstream timeout: the provider sent nothing for ${duration}`
 }
 
 /**
@@ -51,19 +57,25 @@ export function idleTimeoutMessage(idleMs: number): string {
  * ends. The hook sits on `push`, the provider's side, not on the consumer's iteration: a client
  * that reads slowly must not make an active upstream look idle.
  *
- * When the idle timeout is what ended the call, the error event's message says so, instead of the
- * provider SDK's generic "aborted".
+ * This replaces `push` on pi's EventStream instance, which pi's providers call through the
+ * instance. A pi release that stops doing so would leave the timer running out on every call
+ * longer than `idleMs`; `test/integration/upstream-timeout.test.ts` runs a real pi provider past
+ * the timeout and fails if that happens, so check it on every pi upgrade.
+ *
+ * When the idle timeout, and not the client leaving, is what ended the call, the error event's
+ * message says so instead of the provider SDK's generic "aborted".
  */
 export function watchUpstreamActivity(
   stream: AssistantMessageEventStream,
-  idle: UpstreamIdleTimeout
+  idle: UpstreamIdleTimeout,
+  clientSignal: AbortSignal | undefined
 ): void {
   const push = stream.push.bind(stream)
   stream.push = (event: AssistantMessageEvent): void => {
-    if (event.type === 'error' && idle.signal.aborted) {
-      event.error.errorMessage = idleTimeoutMessage(idle.idleMs)
-    } else {
+    if (event.type !== 'error') {
       idle.touch()
+    } else if (idle.signal.aborted && clientSignal?.aborted !== true) {
+      event.error.errorMessage = idleTimeoutMessage(idle.idleMs)
     }
     push(event)
   }
