@@ -20,10 +20,10 @@ A local OpenAI-compatible HTTP proxy built on [pi](https://github.com/badlogic/p
 
 ```bash
 # Install globally
-pnpm add -g @victor-software-house/pi-openai-proxy
+pnpm add -g @vx-daniel/pi-openai-proxy
 
 # Or run directly
-pnpm dlx @victor-software-house/pi-openai-proxy
+pnpm dlx @vx-daniel/pi-openai-proxy
 ```
 
 ## Quickstart
@@ -259,7 +259,7 @@ There is no OpenAPI/Swagger spec for the proxy itself. Use the [OpenAI API refer
 Install as a pi package to get the `/proxy` command family and `--proxy` flag:
 
 ```bash
-pi install npm:@victor-software-house/pi-openai-proxy
+pi install npm:@vx-daniel/pi-openai-proxy
 ```
 
 ### Command family

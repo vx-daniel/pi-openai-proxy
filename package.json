@@ -1,5 +1,5 @@
 {
-  "name": "@victor-software-house/pi-openai-proxy",
+  "name": "@vx-daniel/pi-openai-proxy",
   "version": "4.9.6",
   "description": "OpenAI-compatible HTTP proxy for pi's multi-provider model registry",
   "keywords": [
@@ -14,7 +14,7 @@
   "author": "Victor Software House",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/victor-software-house/pi-openai-proxy.git"
+    "url": "git+https://github.com/vx-daniel/pi-openai-proxy.git"
   },
   "bin": {
     "pi-openai-proxy": "dist/index.mjs"

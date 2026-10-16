@@ -52,7 +52,7 @@ Prepare the stable proxy for release.
 - [x] Add per-request upstream API key override (`X-Pi-Upstream-Api-Key`)
 - [x] Add image MIME type and payload size validation
 - [x] Add CI gates (GitHub Actions: typecheck, lint, test, build, package)
-- [x] Package for npm release (`@victor-software-house/pi-openai-proxy`)
+- [x] Package for npm release (`@victor-software-house/pi-openai-proxy` upstream; `@vx-daniel/pi-openai-proxy` in this fork)
 - [ ] Run compatibility smoke tests with target clients (Open WebUI, Continue, Aider)
 
 ## Phase 3A — Model exposure and identifier controls [DONE]
@@ -116,6 +116,7 @@ Research-backed decisions on deferred compatibility and resilience items. Analys
 - [x] Add a `chat_request` log line naming the requested and the resolved model of each chat request
 - [x] Consolidate tooling on Vite+ (Oxfmt, Oxlint + tsgolint, Vitest, tsdown, `vp` hooks) and run on Node instead of Bun
 - [x] Adopt the Viaanix lint rules (copied into `vite.config.ts`) with zero warnings
+- [x] Rename the package to `@vx-daniel/pi-openai-proxy` (GitHub Packages scope must match the repo owner)
 
 ## Phase 4 — Monorepo and proper CLI
 

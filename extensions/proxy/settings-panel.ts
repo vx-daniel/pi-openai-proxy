@@ -11,7 +11,7 @@ import {
   type ProxyConfig,
   type PublicModelIdMode,
   saveConfigToFile
-} from '@victor-software-house/pi-openai-proxy/config'
+} from '@vx-daniel/pi-openai-proxy/config'
 
 import { buildModelSelectorSubmenu } from './model-selector'
 import type { ProxyState } from './state'

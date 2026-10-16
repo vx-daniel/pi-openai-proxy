@@ -8,7 +8,7 @@ import { dirname, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent'
-import { configToEnv, loadConfigFromFile } from '@victor-software-house/pi-openai-proxy/config'
+import { configToEnv, loadConfigFromFile } from '@vx-daniel/pi-openai-proxy/config'
 
 import { type ProxyState, proxyUrl } from './state'
 
@@ -37,16 +37,12 @@ function isProbeBody(value: unknown): value is ProbeBody {
   return Array.isArray(candidate.data)
 }
 
-// Resolve pi-proxy binary: try local dev build, then installed package, then PATH
+// The proxy entry point: the built `dist/index.mjs` this package ships beside the extension, or
+// failing that the package's `pi-openai-proxy` bin on PATH.
 function findProxyBinary(packageRoot: string): string {
-  // Local development: dist/index.mjs in the same package root
   const localBin = resolve(packageRoot, 'dist', 'index.mjs')
   if (existsSync(localBin)) return localBin
-  // Installed as dependency: node_modules/pi-proxy/dist/index.mjs
-  const depBin = resolve(packageRoot, 'node_modules', 'pi-proxy', 'dist', 'index.mjs')
-  if (existsSync(depBin)) return depBin
-  // Fallback: assume pi-proxy is in PATH
-  return 'pi-proxy'
+  return 'pi-openai-proxy'
 }
 
 // A built entry runs on the runtime hosting pi (Node); anything else is an executable on PATH.

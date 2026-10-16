@@ -15,8 +15,8 @@
  *   /proxy reset      Restore default settings
  *   /proxy help       Usage line
  *
- * Config schema imported from @victor-software-house/pi-openai-proxy/config (SSOT).
- * Model-exposure engine imported from @victor-software-house/pi-openai-proxy/exposure.
+ * Config schema imported from @vx-daniel/pi-openai-proxy/config (SSOT).
+ * Model-exposure engine imported from @vx-daniel/pi-openai-proxy/exposure.
  *
  * pi loads this directory as one extension through its index.ts; the sibling modules are
  * imported here and are not discovered as separate extensions.
@@ -31,7 +31,7 @@ import {
   getConfigPath,
   loadConfigFromFile,
   saveConfigToFile
-} from '@victor-software-house/pi-openai-proxy/config'
+} from '@vx-daniel/pi-openai-proxy/config'
 
 import {
   refreshStatus,

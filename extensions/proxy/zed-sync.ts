@@ -3,9 +3,9 @@
  */
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent'
-import { loadConfigFromFile } from '@victor-software-house/pi-openai-proxy/config'
-import { computeModelExposure } from '@victor-software-house/pi-openai-proxy/exposure'
-import { syncToZed, type ZedSyncOptions } from '@victor-software-house/pi-openai-proxy/sync/zed'
+import { loadConfigFromFile } from '@vx-daniel/pi-openai-proxy/config'
+import { computeModelExposure } from '@vx-daniel/pi-openai-proxy/exposure'
+import { syncToZed, type ZedSyncOptions } from '@vx-daniel/pi-openai-proxy/sync/zed'
 
 import { buildExposureConfig, getAvailableModels, type ProxyState } from './state'
 

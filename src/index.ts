@@ -1,5 +1,5 @@
 /**
- * pi-proxy entry point.
+ * pi-openai-proxy entry point.
  *
  * Proper CLI with citty: args, help, version.
  * Config priority: CLI args > env vars > JSON config file > defaults.
@@ -54,7 +54,7 @@ function buildCliOverrides(args: CliArgs): CliOverrides {
 
 const main = defineCommand({
   meta: {
-    name: 'pi-proxy',
+    name: 'pi-openai-proxy',
     description: "OpenAI-compatible HTTP proxy for pi's multi-provider model registry"
   },
   args: {

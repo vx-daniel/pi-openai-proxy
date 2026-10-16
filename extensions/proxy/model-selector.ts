@@ -5,7 +5,7 @@
 
 import { getSettingsListTheme } from '@earendil-works/pi-coding-agent'
 import { type Component, type SettingItem, SettingsList } from '@earendil-works/pi-tui'
-import { loadConfigFromFile, saveConfigToFile } from '@victor-software-house/pi-openai-proxy/config'
+import { loadConfigFromFile, saveConfigToFile } from '@vx-daniel/pi-openai-proxy/config'
 
 import { getAvailableModels, type ProxyState } from './state'
 
