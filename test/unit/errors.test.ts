@@ -29,33 +29,63 @@ describe('error helpers', () => {
 })
 
 describe('mapUpstreamError', () => {
-  test('maps rate limit errors to 429', () => {
-    const result = mapUpstreamError(new Error('rate limit exceeded'))
-    expect(result.status).toBe(429)
+  /** Upstream error text can quote the request, a key or an account: none of it may pass through. */
+  const SECRET = 'notarealsecret-upstream-quoted-key'
+
+  function upstreamBody(message: string, code: string): unknown {
+    return { error: { message, type: 'server_error', param: null, code } }
+  }
+
+  // Catches a branch answering with the wrong status, a body that is not the fixed text for it,
+  // or the upstream message (and whatever it quotes) reaching the client.
+  test.each([
+    [
+      'a rate limit',
+      `rate limit exceeded for ${SECRET}`,
+      429,
+      upstreamBody('Upstream rate limit exceeded', 'rate_limit')
+    ],
+    [
+      'a socket timeout',
+      `connect ETIMEDOUT ${SECRET}`,
+      504,
+      upstreamBody('Upstream request timed out', 'timeout')
+    ],
+    [
+      'the proxy’s upstream idle timeout',
+      'Upstream timeout: the provider sent nothing for 120 s',
+      504,
+      upstreamBody('Upstream request timed out', 'timeout')
+    ],
+    [
+      'an upstream auth failure',
+      `401 Unauthorized: invalid x-api-key ${SECRET}`,
+      502,
+      upstreamBody('Upstream authentication failed', 'upstream_auth_error')
+    ],
+    [
+      'an overloaded provider',
+      `529 overloaded ${SECRET}`,
+      503,
+      upstreamBody('Upstream provider is overloaded', 'provider_overloaded')
+    ],
+    [
+      'anything else',
+      `400 {"error":"prompt contained ${SECRET}"}`,
+      502,
+      upstreamBody('Upstream provider error', 'upstream_error')
+    ]
+  ])('maps %s to its status and fixed text', (_case, upstreamMessage, status, body) => {
+    const mapped = mapUpstreamError(new Error(upstreamMessage))
+
+    expect(mapped).toEqual({ status, body })
+    expect(JSON.stringify(mapped)).not.toContain(SECRET)
   })
 
-  test('maps timeout errors to 504', () => {
-    const result = mapUpstreamError(new Error('ETIMEDOUT'))
-    expect(result.status).toBe(504)
-  })
-
-  test('maps auth errors to 502', () => {
-    const result = mapUpstreamError(new Error('401 Unauthorized'))
-    expect(result.status).toBe(502)
-  })
-
-  test('maps overloaded errors to 503', () => {
-    const result = mapUpstreamError(new Error('529 overloaded'))
-    expect(result.status).toBe(503)
-  })
-
-  test('maps unknown errors to 502', () => {
-    const result = mapUpstreamError(new Error('something weird'))
-    expect(result.status).toBe(502)
-  })
-
-  test('handles non-Error objects', () => {
-    const result = mapUpstreamError('string error')
-    expect(result.status).toBe(502)
+  test('maps a thrown value that is not an Error to the generic 502', () => {
+    expect(mapUpstreamError(`string error ${SECRET}`)).toEqual({
+      status: 502,
+      body: upstreamBody('Upstream provider error', 'upstream_error')
+    })
   })
 })
