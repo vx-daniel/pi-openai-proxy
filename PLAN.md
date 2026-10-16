@@ -367,7 +367,8 @@ Stable policy:
 
 - support a documented subset of JSON Schema only
 - reject unsupported schema constructs with `422`
-- do not silently downgrade complex schemas
+- do not silently downgrade schemas: every keyword is carried upstream, dropped as meta, or
+  rejected
 
 Supported subset:
 
@@ -375,12 +376,25 @@ Supported subset:
 - `type: string`, `number`, `integer`, `boolean`, `null`
 - `type: array` with `items` schema
 - `enum` (string values only, mapped to TypeBox Union of literals)
-- nullable types via `type: [T, "null"]`
-- `description` on any schema node
-- `additionalProperties` as boolean (not as schema)
+- nullable types via `type: [T, "null"]`: constraints go on the `T` branch, annotations on the
+  union
 - `anyOf` for nullable types and simple unions (max 10 branches)
+- annotations on any node: `description`, `title`, `default`, `examples`, `deprecated`,
+  `readOnly`, `writeOnly`
+- constraints, carried upstream, only on the type they apply to:
+  - `string`: `minLength`, `maxLength`, `pattern`, `format`, `const`
+  - `number`, `integer`: `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`,
+    `multipleOf`, `const`
+  - `boolean`: `const`
+  - `array`: `minItems`, `maxItems`, `uniqueItems`
+  - `object`: `minProperties`, `maxProperties`, `additionalProperties` (boolean)
+- keyword values are checked: lengths and counts are non-negative integers, bounds are finite
+  numbers, `pattern`/`format`/annotations are strings, flags are booleans, `examples` is an array
 
-Rejected:
+Dropped: `$schema`, `$id`, `$comment`. They carry nothing for the model; zod-to-json-schema and
+similar generators add `$schema` to every schema. Each drop is logged at debug with its path.
+
+Rejected (`422`, naming the keyword and its path; logged as a warning with the tool name):
 
 - `$ref`
 - `oneOf` / `allOf`
@@ -390,6 +404,9 @@ Rejected:
 - `additionalProperties` as a schema object
 - recursive schemas
 - non-string enum values
+- any other keyword (e.g. `x-*` extensions, OpenAPI `nullable`, `propertyNames`), or a supported
+  keyword on a type it does not apply to
+- a supported keyword whose value is of the wrong kind
 
 ## Known gaps and silent drops
 
@@ -421,6 +438,23 @@ flags from the original request and patches them into the payload after the SDK 
 This means `strict: true` reaches OpenAI and compatible providers correctly. Like all
 passthrough fields, `strict` is only injected for OpenAI-compatible APIs. Non-compatible
 providers are unaffected.
+
+### Tool schema keywords — resolved
+
+Before #37, the converter kept only the structure (`type`, `properties`, `required`, `items`,
+`enum`, `anyOf`, `description`) and silently dropped every other keyword: ranges, lengths,
+`pattern`, `format`, defaults, and `additionalProperties: false`. The model saw looser schemas
+than the client wrote, and `strict: true` tools reached OpenAI without the
+`additionalProperties: false` its strict mode requires on every object.
+
+Supported constraints and annotations are now carried upstream, meta declarations are dropped
+and logged, and any other keyword is rejected with `422` (see "Tool schema policy"). Clients
+whose schemas use keywords outside the subset, which used to be silently dropped, now get a
+`422`.
+
+pi decides what each provider receives. For Anthropic it sends only the top-level `properties`
+and `required`, so a top-level `additionalProperties` does not reach Anthropic; nested schemas
+pass through unchanged. Google receives the schema as `parametersJsonSchema` (full JSON Schema).
 
 ### `parallel_tool_calls` — resolved
 

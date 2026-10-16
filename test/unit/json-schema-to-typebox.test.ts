@@ -92,26 +92,6 @@ describe('jsonSchemaToTypebox', () => {
       if (!result.ok) return
       expect(schemaValue(result.schema, 'type')).toBe('object')
     })
-
-    test('rejects additionalProperties as schema object', () => {
-      const result = jsonSchemaToTypebox({
-        type: 'object',
-        properties: { name: { type: 'string' } },
-        additionalProperties: { type: 'string' }
-      })
-      expect(result.ok).toBe(false)
-      if (result.ok) return
-      expect(result.message).toContain('additionalProperties')
-    })
-
-    test('allows additionalProperties as boolean', () => {
-      const result = jsonSchemaToTypebox({
-        type: 'object',
-        properties: { name: { type: 'string' } },
-        additionalProperties: false
-      })
-      expect(result.ok).toBe(true)
-    })
   })
 
   describe('array type', () => {
@@ -344,6 +324,134 @@ describe('jsonSchemaToTypebox', () => {
         }
       })
       expect(result.ok).toBe(true)
+    })
+  })
+
+  describe('keywords beyond the structure', () => {
+    /** The converted schema as sent upstream; TypeBox's symbol keys never leave the process. */
+    function convertedJson(schema: Record<string, unknown>): unknown {
+      const result = jsonSchemaToTypebox(schema, 'p')
+      return result.ok ? JSON.parse(JSON.stringify(result.schema)) : result
+    }
+
+    // Catches a constraint or annotation dropped, renamed or moved for its type (#37). Each
+    // schema converts to itself: every keyword is carried over unchanged.
+    test.each([
+      {
+        type: 'string',
+        minLength: 1,
+        maxLength: 5,
+        pattern: '^a',
+        format: 'date-time',
+        const: 'abc'
+      },
+      {
+        type: 'number',
+        minimum: 0,
+        maximum: 1.5,
+        exclusiveMinimum: -1,
+        exclusiveMaximum: 2,
+        multipleOf: 0.5
+      },
+      { type: 'integer', minimum: 1, maximum: 9, multipleOf: 1, const: 3 },
+      { type: 'boolean', const: true },
+      { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 3, uniqueItems: true },
+      {
+        type: 'object',
+        properties: {},
+        minProperties: 1,
+        maxProperties: 4,
+        additionalProperties: true
+      },
+      {
+        type: 'null',
+        description: 'nothing',
+        title: 'Nothing',
+        default: null,
+        examples: [null],
+        deprecated: true,
+        readOnly: true,
+        writeOnly: false
+      }
+    ])('$type keeps its keywords', (schema) => {
+      expect(convertedJson(schema)).toEqual(schema)
+    })
+
+    // Catches a constraint applied to the nullable union instead of the typed branch, where it
+    // would also constrain `null`, or the annotations copied onto both.
+    test('a nullable type puts constraints on its branch and annotations on the union', () => {
+      expect(
+        convertedJson({
+          type: ['string', 'null'],
+          maxLength: 3,
+          description: 'zone',
+          default: null
+        })
+      ).toEqual({
+        anyOf: [{ type: 'string', maxLength: 3 }, { type: 'null' }],
+        description: 'zone',
+        default: null
+      })
+    })
+
+    // Catches meta declarations forwarded upstream or refused: they mean nothing to the model.
+    test('$schema, $id and $comment are dropped', () => {
+      expect(
+        convertedJson({
+          $schema: 'http://json-schema.org/draft-07/schema#',
+          $id: 'urn:weather',
+          $comment: 'internal',
+          type: 'object',
+          properties: { city: { type: 'string', $comment: 'free text' } }
+        })
+      ).toEqual({ type: 'object', properties: { city: { type: 'string' } } })
+    })
+
+    // Catches a keyword outside the supported subset silently dropped instead of refused, a
+    // keyword accepted on a type it does not apply to, a value of the wrong kind sent upstream to
+    // fail there, or an inherited property name (`toString`) mistaken for a supported keyword.
+    test.each([
+      [
+        { 'type': 'string', 'x-display': 'City' },
+        "Unsupported JSON Schema keyword 'x-display' for type 'string' at p"
+      ],
+      [
+        { type: 'integer', maxLength: 3 },
+        "Unsupported JSON Schema keyword 'maxLength' for type 'integer' at p"
+      ],
+      [
+        { type: 'string', toString: 'x' },
+        "Unsupported JSON Schema keyword 'toString' for type 'string' at p"
+      ],
+      [
+        { type: 'string', nullable: true },
+        "Unsupported JSON Schema keyword 'nullable' for type 'string' at p"
+      ],
+      [
+        { anyOf: [{ type: 'string' }], minLength: 1 },
+        "Unsupported JSON Schema keyword 'minLength' at p"
+      ],
+      [
+        { type: 'string', enum: ['a'], pattern: 'a' },
+        "Unsupported JSON Schema keyword 'pattern' at p"
+      ],
+      [{ minimum: 1 }, "Missing or invalid 'type' at p"],
+      [{ type: 'string', minLength: -1 }, "'minLength' must be a non-negative integer at p"],
+      [{ type: 'array', maxItems: 1.5 }, "'maxItems' must be a non-negative integer at p"],
+      [
+        { type: 'number', exclusiveMinimum: true },
+        "'exclusiveMinimum' must be a finite number at p"
+      ],
+      [{ type: 'string', pattern: 1 }, "'pattern' must be a string at p"],
+      [{ type: 'array', uniqueItems: 'yes' }, "'uniqueItems' must be a boolean at p"],
+      [{ type: 'string', examples: 'a' }, "'examples' must be an array at p"],
+      [{ type: 'string', description: 1 }, "'description' must be a string at p"],
+      [
+        { type: 'object', additionalProperties: { type: 'string' } },
+        "'additionalProperties' must be a boolean at p"
+      ]
+    ])('%j is refused', (schema, message) => {
+      expect(jsonSchemaToTypebox(schema, 'p')).toEqual({ ok: false, message, path: 'p' })
     })
   })
 })
