@@ -37,6 +37,20 @@ describe('summarizeAuthError', () => {
     ).toBe('Token request failed')
   })
 
+  // Catches a `response=` field (the token endpoint's reply) leaking the issued token to the client.
+  test('cuts a response= field', () => {
+    expect(
+      summarizeAuthError('Token exchange failed; response={"access_token":"sk-live-secret"}')
+    ).toBe('Token exchange failed')
+  })
+
+  // Catches an array body (no `{` and no field marker) carrying a token past the summary.
+  test('cuts an unmarked array literal', () => {
+    expect(summarizeAuthError('Token request failed: ["invalid_scope","sk-live-secret"]')).toBe(
+      'Token request failed'
+    )
+  })
+
   // Catches a long summary pushing the status off the end of the truncated text.
   test('keeps the status when the summary is truncated', () => {
     const summary = summarizeAuthError(`${'x'.repeat(1000)}; details=status=401`)

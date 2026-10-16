@@ -33,6 +33,7 @@ import {
 import { testApp } from '../helpers'
 
 const PROVIDER_KEY = 'notarealsecret-recorded-provider-key'
+const HTTP_BAD_GATEWAY = 502
 
 let upstream: MockProvider
 let recorder: Recorder
@@ -152,5 +153,35 @@ describe('record and replay', () => {
     expect(() =>
       saveRecording(named(captured.exchange, 'echo-key'), captured.secrets, recordingsDir)
     ).toThrow('contains a credential')
+  })
+})
+
+describe('recorder whose upstream cannot be reached', () => {
+  // Catches an unreachable upstream recorded as an exchange (a fixture of the recorder's own
+  // failure) or answered as anything a provider client would retry or take for a real answer.
+  test('answers 502 with the reason and keeps no exchange', async () => {
+    const unreachable = 'http://127.0.0.1:9'
+    const deadEnd = await startRecorder(unreachable)
+    try {
+      const response = await fetch(`${deadEnd.baseUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'two-tools', messages: [{ role: 'user', content: 'Hi' }] })
+      })
+
+      expect({
+        status: response.status,
+        contentType: response.headers.get('content-type'),
+        text: await response.text(),
+        exchanges: deadEnd.exchanges
+      }).toEqual({
+        status: HTTP_BAD_GATEWAY,
+        contentType: 'text/plain',
+        text: `recorder could not reach ${unreachable}: TypeError: fetch failed`,
+        exchanges: []
+      })
+    } finally {
+      await deadEnd.close()
+    }
   })
 })

@@ -41,38 +41,44 @@ describe('collectAnthropicPayloadFields', () => {
     expect(fields?.['metadata']).toEqual({ user_id: 'user-123' })
   })
 
-  test('skips seed (not supported by Anthropic)', () => {
-    const fields = collectAnthropicPayloadFields(minimalRequest({ seed: 42 }))
-    expect(fields).toBeUndefined()
-  })
-
-  test('skips frequency_penalty (not supported by Anthropic)', () => {
-    const fields = collectAnthropicPayloadFields(minimalRequest({ frequency_penalty: 0.5 }))
-    expect(fields).toBeUndefined()
-  })
-
-  test('skips presence_penalty (not supported by Anthropic)', () => {
-    const fields = collectAnthropicPayloadFields(minimalRequest({ presence_penalty: 0.5 }))
-    expect(fields).toBeUndefined()
-  })
-
-  test('skips response_format (not supported by Anthropic)', () => {
+  // Catches an Anthropic translation that leaks an unsupported field (seed, penalties,
+  // response_format, prediction, arbitrary metadata) into the request, which Anthropic rejects:
+  // with every passthrough field set, only the translated fields may come out.
+  test('sends only translated fields when every passthrough field is set', () => {
     const fields = collectAnthropicPayloadFields(
-      minimalRequest({ response_format: { type: 'json_object' } })
+      minimalRequest({
+        tool_choice: 'required',
+        parallel_tool_calls: false,
+        top_p: 0.9,
+        seed: 42,
+        stop: 'END',
+        user: 'user-123',
+        frequency_penalty: 0.5,
+        presence_penalty: 0.5,
+        metadata: { task: 'test', chat_id: 'abc' },
+        response_format: { type: 'json_object' },
+        prediction: { type: 'content', content: 'test' }
+      })
     )
-    expect(fields).toBeUndefined()
+    expect(fields).toEqual({
+      top_p: 0.9,
+      stop_sequences: ['END'],
+      tool_choice: { type: 'any', disable_parallel_tool_use: true },
+      metadata: { user_id: 'user-123' }
+    })
   })
 
-  test('skips prediction (not supported by Anthropic)', () => {
+  // Catches unsupported fields alone producing a non-empty patch.
+  test('returns undefined when only unsupported fields are set', () => {
     const fields = collectAnthropicPayloadFields(
-      minimalRequest({ prediction: { type: 'content', content: 'test' } })
-    )
-    expect(fields).toBeUndefined()
-  })
-
-  test('skips arbitrary metadata (Anthropic only accepts user_id)', () => {
-    const fields = collectAnthropicPayloadFields(
-      minimalRequest({ metadata: { task: 'test', chat_id: 'abc' } })
+      minimalRequest({
+        seed: 42,
+        frequency_penalty: 0.5,
+        presence_penalty: 0.5,
+        metadata: { task: 'test', chat_id: 'abc' },
+        response_format: { type: 'json_object' },
+        prediction: { type: 'content', content: 'test' }
+      })
     )
     expect(fields).toBeUndefined()
   })
@@ -255,5 +261,61 @@ describe('patchGooglePayload', () => {
     const payload: Record<string, unknown> = { model: 'test' }
     const patched = patchGooglePayload(payload, minimalRequest({ top_p: 0.9 }))
     expect(patched).toBe(false)
+  })
+
+  // Catches a named tool_choice mapped to AUTO (the model could then skip the tool) or dropped:
+  // Google cannot force one function, so the closest is ANY.
+  test('maps a named tool_choice to mode ANY', () => {
+    const payload = googlePayload()
+    const patched = patchGooglePayload(
+      payload,
+      minimalRequest({ tool_choice: { type: 'function', function: { name: 'get_weather' } } })
+    )
+    expect(patched).toBe(true)
+    expect(payload).toEqual({
+      model: 'gemini-2.5-flash',
+      contents: [],
+      config: {
+        generationConfig: {},
+        toolConfig: { functionCallingConfig: { mode: 'ANY' } }
+      }
+    })
+  })
+
+  // Catches an unsupported field (user, metadata, response_format, prediction,
+  // parallel_tool_calls) leaking into Google's payload, or a supported one landing in the wrong
+  // place: with every passthrough field set, the whole payload is pinned.
+  test('patches only supported fields when every passthrough field is set', () => {
+    const payload = googlePayload()
+    patchGooglePayload(
+      payload,
+      minimalRequest({
+        tool_choice: 'required',
+        parallel_tool_calls: false,
+        top_p: 0.9,
+        seed: 42,
+        stop: 'END',
+        user: 'user-123',
+        frequency_penalty: 0.5,
+        presence_penalty: -0.5,
+        metadata: { task: 'test' },
+        response_format: { type: 'json_object' },
+        prediction: { type: 'content', content: 'test' }
+      })
+    )
+    expect(payload).toEqual({
+      model: 'gemini-2.5-flash',
+      contents: [],
+      config: {
+        generationConfig: {
+          topP: 0.9,
+          stopSequences: ['END'],
+          seed: 42,
+          frequencyPenalty: 0.5,
+          presencePenalty: -0.5
+        },
+        toolConfig: { functionCallingConfig: { mode: 'ANY' } }
+      }
+    })
   })
 })

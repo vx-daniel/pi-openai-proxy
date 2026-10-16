@@ -27,7 +27,10 @@ tester.run('no-abbreviations', rule('no-abbreviations'), {
     'type ctx = string',
     'function wrap<ctx>(value: ctx): ctx { return value }',
     'const value = request.ctx',
-    { code: 'const ctx = 1', options: [{ allow: ['ctx'] }] }
+    { code: 'const ctx = 1', options: [{ allow: ['ctx'] }] },
+    // Catches: the accessor / method-signature visitors flagging full words.
+    'class Counter { accessor count = 0 }',
+    'interface Lookup { index(): number }'
   ],
   invalid: [
     { code: 'const ctx = 1', errors: [{ messageId: 'binding' }] },
@@ -45,7 +48,17 @@ tester.run('no-abbreviations', rule('no-abbreviations'), {
       errors: [{ messageId: 'key' }, { messageId: 'key' }]
     },
     { code: 'interface Paths { dir: string }', errors: [{ messageId: 'key' }] },
-    { code: 'enum Kind { tmp }', errors: [{ messageId: 'key' }] }
+    { code: 'enum Kind { tmp }', errors: [{ messageId: 'key' }] },
+    // Catches: dropping the AccessorProperty visitor, so `accessor` fields go unchecked.
+    {
+      code: 'class Counter { accessor cnt = 0 }',
+      errors: [{ messageId: 'key', line: 1, column: 25, endColumn: 28 }]
+    },
+    // Catches: dropping the TSMethodSignature visitor, so interface methods go unchecked.
+    {
+      code: 'interface Lookup { idx(): number }',
+      errors: [{ messageId: 'key', line: 1, column: 19, endColumn: 22 }]
+    }
   ]
 })
 

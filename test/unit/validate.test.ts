@@ -1,6 +1,8 @@
 import { validateChatRequest } from '@proxy/openai/validate'
 import { describe, expect, test } from 'vite-plus/test'
 
+const HTTP_UNPROCESSABLE = 422
+
 describe('validateChatRequest', () => {
   test('accepts minimal valid request', () => {
     const result = validateChatRequest({
@@ -90,15 +92,20 @@ describe('validateChatRequest', () => {
     expect(result.ok).toBe(true)
   })
 
-  test('rejects unknown top-level fields with 422', () => {
+  // Catches an unknown-field rejection that loses the 422 status or stops naming the offending
+  // field in `param`, which clients use to point at the bad parameter.
+  test('rejects unknown top-level fields with 422 naming the field', () => {
     const result = validateChatRequest({
       model: 'openai/gpt-4o',
       messages: [{ role: 'user', content: 'Hello' }],
       unknown_field: 'value'
     })
-    expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.status).toBe(422)
+    expect(result).toEqual({
+      ok: false,
+      status: HTTP_UNPROCESSABLE,
+      message: 'Unknown parameter(s): unknown_field',
+      param: 'unknown_field'
+    })
   })
 
   test('rejects temperature out of range', () => {

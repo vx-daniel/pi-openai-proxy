@@ -9,9 +9,11 @@ import { DEFAULT_CONFIG, normalizeConfig } from '@proxy/config/schema'
 import { describe, expect, test } from 'vite-plus/test'
 
 describe('normalizeConfig', () => {
+  // Catches `null` (the one non-object input with `typeof === 'object'`) slipping past the object
+  // check and crashing or yielding a partial config instead of the full defaults. This is about the
+  // fallback, not the default values themselves.
   test('returns defaults for null input', () => {
-    const result = normalizeConfig(null)
-    expect(result).toEqual(DEFAULT_CONFIG)
+    expect(normalizeConfig(null)).toEqual(DEFAULT_CONFIG)
   })
 
   test('returns defaults for undefined input', () => {
@@ -138,6 +140,7 @@ describe('normalizeConfig', () => {
     expect(normalizeConfig({ providerPrefixes: 'not-object' }).providerPrefixes).toEqual({})
   })
 
+  // Catches a valid field being dropped or replaced by its default during normalization.
   test('preserves all fields from a complete valid config', () => {
     const full = {
       host: '0.0.0.0',
@@ -150,20 +153,11 @@ describe('normalizeConfig', () => {
       publicModelIdMode: 'always-prefixed',
       modelExposureMode: 'custom',
       customModels: ['openai/gpt-4o'],
-      providerPrefixes: { openai: 'oai' }
+      providerPrefixes: { openai: 'oai' },
+      logLevel: 'debug',
+      zed: { providerName: 'My Proxy', autoSync: true }
     }
-    const result = normalizeConfig(full)
-    expect(result.host).toBe('0.0.0.0')
-    expect(result.port).toBe(9090)
-    expect(result.lifetime).toBe('session')
-    expect(result.authToken).toBe('tok')
-    expect(result.remoteImages).toBe(true)
-    expect(result.maxBodySizeMb).toBe(100)
-    expect(result.upstreamTimeoutSec).toBe(300)
-    expect(result.publicModelIdMode).toBe('always-prefixed')
-    expect(result.modelExposureMode).toBe('custom')
-    expect(result.customModels).toEqual(['openai/gpt-4o'])
-    expect(result.providerPrefixes).toEqual({ openai: 'oai' })
+    expect(normalizeConfig(full)).toEqual(full)
   })
 
   test('normalizes zed config with defaults when missing', () => {

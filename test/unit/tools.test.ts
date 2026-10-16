@@ -62,6 +62,7 @@ describe('convertTools', () => {
     expect(asJson(result.tools[0]?.parameters)).toEqual({ type: 'object', properties: {} })
   })
 
+  // Catches a converter that drops, reorders, or merges tools when several are sent.
   test('converts multiple tools', () => {
     const result = convertTools([
       {
@@ -81,11 +82,27 @@ describe('convertTools', () => {
         }
       }
     ])
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    expect(result.tools).toHaveLength(2)
+    assert(result.ok, 'expected the tools to convert')
+
+    expect(asJson(result)).toEqual({
+      ok: true,
+      tools: [
+        {
+          name: 'tool_a',
+          description: 'Tool A',
+          parameters: { type: 'object', properties: {} }
+        },
+        {
+          name: 'tool_b',
+          description: 'Tool B',
+          parameters: { type: 'object', properties: { amount: { type: 'number' } } }
+        }
+      ]
+    })
   })
 
+  // Catches an unsupported `$ref` slipping through to the provider, or an error that no longer
+  // names the offending tool parameter.
   test('rejects tools with unsupported JSON Schema', () => {
     const result = convertTools([
       {
@@ -102,12 +119,15 @@ describe('convertTools', () => {
         }
       }
     ])
-    expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.message).toContain('$ref')
-    expect(result.param).toContain('tools[0]')
+
+    expect(result).toEqual({
+      ok: false,
+      message: "Unsupported JSON Schema keyword '$ref' at tools[0].function.parameters.data",
+      param: 'tools[0].function.parameters.data'
+    })
   })
 
+  // Catches a missing description sent as undefined (some providers reject it) instead of ''.
   test('handles tool with empty description', () => {
     const result = convertTools([
       {
@@ -118,14 +138,14 @@ describe('convertTools', () => {
         }
       }
     ])
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    const tool = result.tools[0]
-    expect(tool).toBeDefined()
-    if (tool === undefined) return
-    expect(tool.description).toBe('')
+
+    expect(asJson(result)).toEqual({
+      ok: true,
+      tools: [{ name: 'no_desc', description: '', parameters: { type: 'object', properties: {} } }]
+    })
   })
 
+  // Catches nested object properties or their `required` list being flattened or dropped.
   test('converts tools with nested object parameters', () => {
     const result = convertTools([
       {
@@ -152,11 +172,35 @@ describe('convertTools', () => {
         }
       }
     ])
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    expect(result.tools).toHaveLength(1)
+
+    expect(asJson(result)).toEqual({
+      ok: true,
+      tools: [
+        {
+          name: 'create_user',
+          description: 'Create a user',
+          parameters: {
+            type: 'object',
+            required: ['name'],
+            properties: {
+              name: { type: 'string' },
+              address: {
+                type: 'object',
+                required: ['street', 'city'],
+                properties: {
+                  street: { type: 'string' },
+                  city: { type: 'string' },
+                  zip: { type: 'string' }
+                }
+              }
+            }
+          }
+        }
+      ]
+    })
   })
 
+  // Catches array item types or array descriptions lost in conversion.
   test('converts tools with array parameters', () => {
     const result = convertTools([
       {
@@ -178,6 +222,26 @@ describe('convertTools', () => {
         }
       }
     ])
-    expect(result.ok).toBe(true)
+
+    expect(asJson(result)).toEqual({
+      ok: true,
+      tools: [
+        {
+          name: 'process_items',
+          description: 'Process items',
+          parameters: {
+            type: 'object',
+            required: ['items'],
+            properties: {
+              items: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'List of items to process'
+              }
+            }
+          }
+        }
+      ]
+    })
   })
 })
