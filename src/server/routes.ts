@@ -114,9 +114,12 @@ function handleUpstreamError(err: unknown): { status: UpstreamErrorStatus; body:
   chatLogger.error('Upstream call failed with {status}: {message}', {
     status: mapped.status,
     message: mapped.body.error.message,
-    code: mapped.body.error.code,
-    detail: err instanceof Error ? err.message : undefined
+    code: mapped.body.error.code
   })
+  // The raw upstream message stays at debug: some providers quote parts of the request back.
+  if (err instanceof Error) {
+    chatLogger.debug('Upstream error detail: {detail}', { detail: err.message })
+  }
   if (mapped.status === HTTP_TOO_MANY_REQUESTS || mapped.status === HTTP_SERVICE_UNAVAILABLE) {
     chatLogger.warn('Upstream overloaded ({upstreamStatus}, {code})', {
       upstreamStatus: mapped.status,

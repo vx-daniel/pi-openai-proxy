@@ -13,7 +13,7 @@ import type { ProxyEnv } from '@proxy/server/types'
 import type { Hono } from 'hono'
 import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'vite-plus/test'
 
-import { testApp } from '../helpers'
+import { testApp, testConfig } from '../helpers'
 
 let app: Hono<ProxyEnv>
 let lines: string[] = []
@@ -35,6 +35,7 @@ afterEach(() => {
 
 interface LogRecordJson {
   logger: string
+  level: string
   message: string
   properties: Record<string, unknown>
 }
@@ -116,5 +117,29 @@ describe('chat request logging', () => {
     const http = logged('pi-openai-proxy.server.http')
     expect(http.map((record) => record.properties['requestId'])).toEqual([requestId, requestId])
     expect(http[1]?.properties).toMatchObject({ method: 'GET', path: '/v1/models', status: 200 })
+  })
+})
+
+describe('proxy auth logging', () => {
+  const configuredToken = 'notarealsecret-configured-token'
+  const wrongToken = 'notarealsecret-wrong-token'
+
+  // Catches a credential reaching the logs: neither the configured token nor the one a client sent
+  // may appear in any line, at any level, while the rejection itself is still logged.
+  test('logs a rejected token as a warning without the token or the header value', async () => {
+    const authApp = testApp({ ...testConfig(), proxyAuthToken: configuredToken })
+
+    const rejected = await authApp.request('/v1/models', {
+      headers: { Authorization: `Bearer ${wrongToken}` }
+    })
+    const accepted = await authApp.request('/v1/models', {
+      headers: { Authorization: `Bearer ${configuredToken}` }
+    })
+
+    expect([rejected.status, accepted.status]).toEqual([401, 200])
+    const authRecords = logged('pi-openai-proxy.server.auth')
+    expect(authRecords.some((record) => record.level === 'WARN')).toBe(true)
+    expect(lines.join('')).not.toContain(wrongToken)
+    expect(lines.join('')).not.toContain(configuredToken)
   })
 })

@@ -17,6 +17,12 @@ import { defineCommand, runMain } from 'citty'
 const lifecycleLogger = proxyLogger('server')
 
 const JSON_INDENT = 2
+const MASKED_TOKEN = '***'
+
+/** Whether a bind address only accepts connections from this machine. */
+function isLoopbackHost(host: string): boolean {
+  return host === 'localhost' || host === '::1' || host.startsWith('127.')
+}
 
 /** Parse a CLI integer argument; returns undefined unless it is a positive finite integer. */
 function parsePositiveIntArg(name: string, value: string | undefined): number | undefined {
@@ -100,11 +106,13 @@ const main = defineCommand({
     }
   },
   run: async ({ args }) => {
-    // --config: show effective config and exit. Command output, not a log line, so it goes to stdout.
+    // --config: show effective config and exit. Command output, not a log line, so it goes to stdout,
+    // where it is easily piped or captured: the auth token is masked.
     if (args.config === true) {
       const file = loadConfigFromFile()
+      const shown = { ...file, authToken: file.authToken.length > 0 ? MASKED_TOKEN : '' }
       process.stdout.write(`Config file: ${getConfigPath()}\n`)
-      process.stdout.write(`${JSON.stringify(file, null, JSON_INDENT)}\n`)
+      process.stdout.write(`${JSON.stringify(shown, null, JSON_INDENT)}\n`)
       return
     }
 
@@ -146,7 +154,17 @@ const main = defineCommand({
       logFormat: format
     })
     if (config.proxyAuthToken === undefined) {
-      lifecycleLogger.debug('Proxy auth is disabled: /v1 endpoints accept unauthenticated requests')
+      // Off-loopback without auth is an exposure worth seeing at the default level.
+      if (isLoopbackHost(config.host)) {
+        lifecycleLogger.debug(
+          'Proxy auth is disabled: /v1 endpoints accept unauthenticated requests'
+        )
+      } else {
+        lifecycleLogger.warn(
+          'Proxy auth is disabled and the proxy listens on {host}: any client that can reach it can use your provider credentials',
+          { host: config.host }
+        )
+      }
     }
 
     // Initialize pi integration; initRegistry logs a models.json load failure itself.

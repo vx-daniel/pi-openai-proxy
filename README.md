@@ -210,6 +210,10 @@ The proxy logs with [LogTape](https://logtape.org) to stderr:
 - **On a terminal:** readable, colored lines.
 - **When piped or redirected:** [JSON Lines](https://jsonlines.org), one object per record with `@timestamp`, `level`, `logger` (the category, e.g. `pi-openai-proxy.server.http`), `message` and `properties`.
 
+An invalid `--log-level` stops the proxy from starting and lists the valid levels. An invalid `PI_PROXY_LOG_LEVEL` is ignored with a warning, and an invalid `logLevel` in the config file falls back to `info`, so a bad value in either never keeps a background proxy from starting.
+
+If proxy auth is off and the proxy binds to anything other than a loopback address, it logs a warning at startup: any client that can reach the port can use your provider credentials.
+
 Every line a request causes carries its `requestId` (and `clientRequestId` when the client sent `X-Client-Request-Id`). At `debug` and `trace` you see the internal decisions: model resolution, conversion, upstream calls and stream events.
 
 Message content and credentials are never logged. Credential-named properties are redacted as a backstop.
