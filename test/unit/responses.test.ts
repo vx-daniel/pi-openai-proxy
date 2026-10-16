@@ -19,17 +19,20 @@ describe('mapFinishReason', () => {
 })
 
 describe('mapUsage', () => {
-  test('maps pi usage to OpenAI usage', () => {
-    const piUsage = {
+  // Catches prompt_tokens reporting only Pi's uncached `input`: with prompt caching, a client
+  // that sizes its context from prompt_tokens would see a tiny fraction of the real prompt.
+  test('reports the whole prompt in prompt_tokens and breaks the cached part out', () => {
+    const result = mapUsage({
       input: 100,
       output: 50,
       cacheRead: 10,
       cacheWrite: 5,
       totalTokens: 165,
       cost: { input: 0.001, output: 0.002, cacheRead: 0.0001, cacheWrite: 0.0002, total: 0.0033 }
-    }
-    const result = mapUsage(piUsage)
+    })
+
     expect(result.prompt_tokens).toBe(115)
+    expect(result.prompt_tokens_details).toEqual({ cached_tokens: 10, cache_write_tokens: 5 })
     expect(result.completion_tokens).toBe(50)
     expect(result.total_tokens).toBe(165)
   })
