@@ -108,7 +108,11 @@ function loggerConfigs(level: LogLevel, sink: string): LoggerConfig<string, stri
 export interface LoggingOptions {
   readonly level: LogLevel
   readonly format: LogFormat
-  /** Where formatted lines go. Default: stderr, written synchronously so nothing is lost on exit. */
+  /**
+   * Where formatted lines go. Default: `process.stderr.write`, which Node performs synchronously for
+   * a terminal or a file and asynchronously for a pipe (POSIX): a piped reader that stops reading
+   * makes the queued lines pile up in this process's memory.
+   */
   readonly write?: (line: string) => void
 }
 

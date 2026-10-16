@@ -238,7 +238,8 @@ function startSessionTied(
   const { command, args } = proxyCommand(bin)
 
   const child = spawn(command, args, {
-    // Discard the proxy's output: unread pipes fill up and block a proxy that logs to stderr.
+    // Discard the proxy's output. A pipe nobody reads fills after ~64 KiB, and Node then queues
+    // every later stderr write in the proxy's memory, without limit, for as long as it runs.
     stdio: ['ignore', 'ignore', 'ignore'],
     detached: false,
     env: { ...process.env, ...env }
