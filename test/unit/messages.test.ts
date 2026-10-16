@@ -53,31 +53,117 @@ describe('convertMessages', () => {
     const assistant = result.context.messages[1]
     expect(assistant?.role).toBe('assistant')
   })
+})
 
-  test('converts tool messages', () => {
-    const messages: OpenAIMessage[] = [
+/** An assistant turn that called these tools, as an OpenAI client sends it back in history. */
+function assistantCalling(
+  ...calls: { readonly id: string; readonly name: string; readonly arguments: string }[]
+): OpenAIMessage {
+  return {
+    role: 'assistant',
+    content: null,
+    tool_calls: calls.map((call) => ({
+      id: call.id,
+      type: 'function' as const,
+      function: { name: call.name, arguments: call.arguments }
+    }))
+  }
+}
+
+function convertedMessages(messages: OpenAIMessage[]): unknown[] {
+  const result = convertMessages(messages)
+  assert(result.ok, 'expected the messages to convert')
+  return result.context.messages
+}
+
+describe('convertMessages: tool calls and results', () => {
+  // Catches the 7ab6e143 regression: a tool result sent without its tool's name, which Gemini
+  // rejects (`function_response.name: REQUIRED_FIELD_MISSING`). OpenAI's tool message carries only
+  // the call ID, so the name has to come from the assistant turn that made the call.
+  test('a tool result carries the name, ID and content of the call it answers', () => {
+    const [, , toolResult] = convertedMessages([
       { role: 'user', content: "What's the weather?" },
-      {
-        role: 'assistant',
-        content: null,
-        tool_calls: [
-          {
-            id: 'tc_1',
-            type: 'function',
-            function: { name: 'get_weather', arguments: '{"city":"SF"}' }
-          }
-        ]
-      },
+      assistantCalling({ id: 'tc_1', name: 'get_weather', arguments: '{"city":"SF"}' }),
       { role: 'tool', content: '{"temp":72}', tool_call_id: 'tc_1' }
-    ]
-    const result = convertMessages(messages)
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    expect(result.context.messages).toHaveLength(3)
-    const toolResult = result.context.messages[2]
-    expect(toolResult?.role).toBe('toolResult')
+    ])
+
+    expect(toolResult).toEqual({
+      role: 'toolResult',
+      toolCallId: 'tc_1',
+      toolName: 'get_weather',
+      content: [{ type: 'text', text: '{"temp":72}' }],
+      isError: false,
+      timestamp: expect.any(Number) as number
+    })
   })
 
+  // Catches names matched by position instead of call ID: results answered out of order.
+  test('each result gets its own call’s name when results come back in another order', () => {
+    const messages = convertedMessages([
+      { role: 'user', content: 'Weather and time?' },
+      assistantCalling(
+        { id: 'tc_weather', name: 'get_weather', arguments: '{}' },
+        { id: 'tc_time', name: 'get_time', arguments: '{}' }
+      ),
+      { role: 'tool', content: '12:00', tool_call_id: 'tc_time' },
+      { role: 'tool', content: 'sunny', tool_call_id: 'tc_weather' }
+    ])
+
+    expect(messages.slice(2)).toEqual([
+      expect.objectContaining({ toolCallId: 'tc_time', toolName: 'get_time' }),
+      expect.objectContaining({ toolCallId: 'tc_weather', toolName: 'get_weather' })
+    ])
+  })
+
+  // Catches a result for an unknown call being dropped (losing what the client sent) instead of
+  // forwarded with the only name the proxy can give it.
+  test('a result for a call no assistant turn made is kept, with an empty name', () => {
+    const [, toolResult] = convertedMessages([
+      { role: 'user', content: 'Hi' },
+      { role: 'tool', content: 'orphan', tool_call_id: 'tc_unknown' }
+    ])
+
+    expect(toolResult).toMatchObject({
+      role: 'toolResult',
+      toolCallId: 'tc_unknown',
+      toolName: '',
+      content: [{ type: 'text', text: 'orphan' }]
+    })
+  })
+
+  // Catches history tool calls lost, renamed, or sent with their arguments as a string.
+  test('assistant tool calls become toolCall parts with parsed arguments', () => {
+    const [, assistant] = convertedMessages([
+      { role: 'user', content: "What's the weather?" },
+      assistantCalling({ id: 'tc_1', name: 'get_weather', arguments: '{"city":"SF","days":2}' })
+    ])
+
+    expect(assistant).toMatchObject({
+      role: 'assistant',
+      content: [
+        { type: 'toolCall', id: 'tc_1', name: 'get_weather', arguments: { city: 'SF', days: 2 } }
+      ]
+    })
+  })
+
+  // Catches a malformed history call failing the whole request: providers need an object, and
+  // an earlier turn's arguments are not worth refusing the next turn over.
+  test.each([
+    ['not JSON', '{"city":'],
+    ['JSON but not an object', '["SF"]']
+  ])('arguments that are %s are sent as an empty object', (_case, rawArguments) => {
+    const [, assistant] = convertedMessages([
+      { role: 'user', content: 'Hi' },
+      assistantCalling({ id: 'tc_1', name: 'get_weather', arguments: rawArguments })
+    ])
+
+    expect(assistant).toMatchObject({
+      content: [{ type: 'toolCall', id: 'tc_1', name: 'get_weather', arguments: {} }]
+    })
+  })
+})
+
+describe('convertMessages: images', () => {
   test('rejects remote image URLs', () => {
     const messages: OpenAIMessage[] = [
       {
