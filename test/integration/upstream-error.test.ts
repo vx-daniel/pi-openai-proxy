@@ -20,7 +20,7 @@ const BELOW_DEFAULT_LEVEL = new Set(['TRACE', 'DEBUG'])
 
 let mock: MockProvider
 let agentDir: FixtureAgentDir
-let records: { level: string; line: string }[] = []
+let records: { level: string; logger: string; line: string }[] = []
 
 beforeAll(async () => {
   mock = await startMockProvider({
@@ -39,8 +39,9 @@ beforeEach(() => {
     format: 'json',
     write: (line) => {
       const parsed: unknown = JSON.parse(line)
-      const level = isRecord(parsed) && typeof parsed['level'] === 'string' ? parsed['level'] : ''
-      records.push({ level, line })
+      const field = (name: string): string =>
+        isRecord(parsed) && typeof parsed[name] === 'string' ? parsed[name] : ''
+      records.push({ level: field('level'), logger: field('logger'), line })
     }
   })
 })
@@ -75,9 +76,13 @@ describe('a failed non-streaming upstream call', () => {
     expect(text).not.toContain(QUOTED)
 
     const atDefaultLevel = records.filter((record) => !BELOW_DEFAULT_LEVEL.has(record.level))
-    expect(
-      atDefaultLevel.some((record) => record.level === 'WARN' || record.level === 'ERROR')
-    ).toBe(true)
+    // The upstream call's own warning (complete.ts) and the route's error line (routes.ts).
+    expect(atDefaultLevel.map((record) => [record.logger, record.level])).toEqual(
+      expect.arrayContaining([
+        ['pi-openai-proxy.pi.complete', 'WARN'],
+        ['pi-openai-proxy.server.chat', 'ERROR']
+      ])
+    )
     for (const record of atDefaultLevel) expect(record.line).not.toContain(QUOTED)
     expect(records.some((record) => record.level === 'DEBUG' && record.line.includes(QUOTED))).toBe(
       true
