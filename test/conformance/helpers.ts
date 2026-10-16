@@ -59,7 +59,7 @@ export function setup(): { app: ReturnType<typeof testApp> } {
   if (!initialized) {
     app = testApp()
 
-    const available = new Set(getAvailableModels().map((m) => `${m.provider}/${m.id}`))
+    const available = new Set(getAvailableModels().map((model) => `${model.provider}/${model.id}`))
     resolvedModels = new Map()
     for (const tm of TEST_MODEL_MATRIX) {
       if (available.has(tm.id)) {
@@ -83,7 +83,7 @@ export function getTestModels(category?: TestModel['category']): TestModel[] {
   if (resolvedModels === undefined) return []
   const all = [...resolvedModels.values()]
   if (category === undefined) return all
-  return all.filter((m) => m.category === category)
+  return all.filter((model) => model.category === category)
 }
 
 /**

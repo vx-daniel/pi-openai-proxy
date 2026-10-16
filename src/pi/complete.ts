@@ -393,11 +393,11 @@ export function collectToolStrictFlags(
 
   let flags: Map<number, true> | undefined
 
-  for (let i = 0; i < tools.length; i++) {
-    const tool = tools[i]
+  for (let toolIndex = 0; toolIndex < tools.length; toolIndex++) {
+    const tool = tools[toolIndex]
     if (tool?.function.strict === true) {
       flags ??= new Map()
-      flags.set(i, true)
+      flags.set(toolIndex, true)
     }
   }
 
@@ -421,8 +421,8 @@ export function applyToolStrictFlags(
   if (!Array.isArray(tools)) {
     return
   }
-  for (const [index, _flag] of strictFlags) {
-    const tool = tools[index] as unknown
+  for (const [toolIndex, _flag] of strictFlags) {
+    const tool = tools[toolIndex] as unknown
     if (isRecord(tool)) {
       const fn = tool['function']
       if (isRecord(fn)) {
@@ -517,8 +517,8 @@ async function buildStreamOptions(
       if (isRecord(payload)) {
         // Flat field injection (OpenAI-compatible and Anthropic)
         if (payloadFields !== undefined) {
-          for (const [key, value] of Object.entries(payloadFields)) {
-            payload[key] = value
+          for (const [fieldName, fieldValue] of Object.entries(payloadFields)) {
+            payload[fieldName] = fieldValue
           }
         }
         // Google nested generationConfig patching

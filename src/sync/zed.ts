@@ -64,20 +64,20 @@ export interface ZedSyncResult {
 export function findZedSettings(): string | undefined {
   const customDir = process.env.CUSTOM_DATA_DIR
   if (customDir !== undefined && customDir.length > 0) {
-    const p = resolve(customDir, 'settings.json')
-    if (existsSync(p)) return p
+    const settingsPath = resolve(customDir, 'settings.json')
+    if (existsSync(settingsPath)) return settingsPath
   }
 
   const home = process.env.HOME
   if (home !== undefined && home.length > 0) {
-    const p = resolve(home, '.config', 'zed', 'settings.json')
-    if (existsSync(p)) return p
+    const settingsPath = resolve(home, '.config', 'zed', 'settings.json')
+    if (existsSync(settingsPath)) return settingsPath
   }
 
   const xdg = process.env.XDG_CONFIG_HOME
   if (xdg !== undefined && xdg.length > 0) {
-    const p = resolve(xdg, 'zed', 'settings.json')
-    if (existsSync(p)) return p
+    const settingsPath = resolve(xdg, 'zed', 'settings.json')
+    if (existsSync(settingsPath)) return settingsPath
   }
 
   return undefined
@@ -145,11 +145,11 @@ function readCurrentModelNames(text: string, providerName: string): string[] {
   if (!Array.isArray(models)) return []
 
   const names: string[] = []
-  for (const entry of models) {
-    if (isRecord(entry)) {
-      const name: unknown = entry['name']
-      if (typeof name === 'string') {
-        names.push(name)
+  for (const availableModel of models) {
+    if (isRecord(availableModel)) {
+      const modelName: unknown = availableModel['name']
+      if (typeof modelName === 'string') {
+        names.push(modelName)
       }
     }
   }
@@ -209,21 +209,21 @@ export function syncToZed(
   const originalText = readFileSync(configPath, 'utf-8')
   const currentNames = new Set(readCurrentModelNames(originalText, options.providerName))
   const zedModels = exposedModels.map(toZedModel)
-  const newNames = new Set(zedModels.map((m) => m.name))
+  const newNames = new Set(zedModels.map((zedModel) => zedModel.name))
 
   let added = 0
   let removed = 0
   let unchanged = 0
 
-  for (const name of newNames) {
-    if (currentNames.has(name)) {
+  for (const modelName of newNames) {
+    if (currentNames.has(modelName)) {
       unchanged += 1
     } else {
       added += 1
     }
   }
-  for (const name of currentNames) {
-    if (!newNames.has(name)) {
+  for (const modelName of currentNames) {
+    if (!newNames.has(modelName)) {
       removed += 1
     }
   }

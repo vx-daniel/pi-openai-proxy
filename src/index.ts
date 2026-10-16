@@ -18,8 +18,8 @@ const JSON_INDENT = 2
 /** Parse a CLI integer argument; returns undefined unless it is a positive finite integer. */
 function parsePositiveIntArg(value: string | undefined): number | undefined {
   if (value === undefined) return undefined
-  const n = Number.parseInt(value, 10)
-  return Number.isFinite(n) && n > 0 ? n : undefined
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
 }
 
 interface CliArgs {

@@ -39,7 +39,7 @@ afterEach(() => {
 function chatRequestEntries(): Record<string, unknown>[] {
   return errorSpy.mock.calls
     .map((call) => JSON.parse(String(call[0])) as Record<string, unknown>)
-    .filter((entry) => entry['event'] === 'chat_request')
+    .filter((logLine) => logLine['event'] === 'chat_request')
 }
 
 const REJECTED_TOOL = {
@@ -57,7 +57,7 @@ describe('chat_request log line', () => {
     if (first === undefined) return
     const canonicalId = `${first.provider}/${first.id}`
 
-    const res = await app.request('/v1/chat/completions', {
+    const response = await app.request('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-client-request-id': 'client-abc' },
       body: JSON.stringify({
@@ -68,7 +68,7 @@ describe('chat_request log line', () => {
       })
     })
 
-    expect(res.status).toBe(422)
+    expect(response.status).toBe(422)
     const entries = chatRequestEntries()
     expect(entries).toHaveLength(1)
     expect(entries[0]).toMatchObject({
@@ -85,7 +85,7 @@ describe('chat_request log line', () => {
   // Catches the line being logged for a model that never resolved: it would name a model that
   // served nothing, and the 404 already says what was asked.
   test('is not logged when the model is not found', async () => {
-    const res = await app.request('/v1/chat/completions', {
+    const response = await app.request('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -94,7 +94,7 @@ describe('chat_request log line', () => {
       })
     })
 
-    expect(res.status).toBe(404)
+    expect(response.status).toBe(404)
     expect(chatRequestEntries()).toEqual([])
   })
 })

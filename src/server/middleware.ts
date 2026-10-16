@@ -16,35 +16,35 @@ const BEARER_PREFIX = 'Bearer '
  * Inject request ID, upstream API key, and logging context into every request.
  */
 export function requestIdMiddleware(): MiddlewareHandler<ProxyEnv> {
-  return async (c, next) => {
+  return async (context, next) => {
     const requestId = generateRequestId()
-    const clientRequestId = c.req.header('x-client-request-id')
-    const upstreamApiKey = c.req.header('x-pi-upstream-api-key')
+    const clientRequestId = context.req.header('x-client-request-id')
+    const upstreamApiKey = context.req.header('x-pi-upstream-api-key')
     const start = performance.now()
 
-    c.set('requestId', requestId)
-    c.set('clientRequestId', clientRequestId)
-    c.set('upstreamApiKey', upstreamApiKey)
+    context.set('requestId', requestId)
+    context.set('clientRequestId', clientRequestId)
+    context.set('upstreamApiKey', upstreamApiKey)
 
     logRequest({
       requestId,
       clientRequestId,
-      method: c.req.method,
-      path: c.req.path
+      method: context.req.method,
+      path: context.req.path
     })
 
     // Set response headers
-    c.header('x-request-id', requestId)
+    context.header('x-request-id', requestId)
     if (clientRequestId !== undefined) {
-      c.header('x-client-request-id', clientRequestId)
+      context.header('x-client-request-id', clientRequestId)
     }
 
     await next()
 
     const duration = performance.now() - start
     logResponse(
-      { requestId, clientRequestId, method: c.req.method, path: c.req.path },
-      c.res.status,
+      { requestId, clientRequestId, method: context.req.method, path: context.req.path },
+      context.res.status,
       duration
     )
   }
@@ -55,15 +55,15 @@ export function requestIdMiddleware(): MiddlewareHandler<ProxyEnv> {
  * Only active when PI_PROXY_AUTH_TOKEN is set.
  */
 export function proxyAuthMiddleware(config: ServerConfig): MiddlewareHandler<ProxyEnv> {
-  return async (c, next) => {
+  return async (context, next) => {
     if (config.proxyAuthToken === undefined) {
       await next()
       return undefined
     }
 
-    const authHeader = c.req.header('authorization')
+    const authHeader = context.req.header('authorization')
     if (authHeader === undefined) {
-      return c.json(authenticationError('Missing Authorization header'), HTTP_UNAUTHORIZED)
+      return context.json(authenticationError('Missing Authorization header'), HTTP_UNAUTHORIZED)
     }
 
     const token = authHeader.startsWith(BEARER_PREFIX)
@@ -71,7 +71,10 @@ export function proxyAuthMiddleware(config: ServerConfig): MiddlewareHandler<Pro
       : undefined
 
     if (token !== config.proxyAuthToken) {
-      return c.json(authenticationError('Invalid proxy authentication token'), HTTP_UNAUTHORIZED)
+      return context.json(
+        authenticationError('Invalid proxy authentication token'),
+        HTTP_UNAUTHORIZED
+      )
     }
 
     await next()
@@ -84,18 +87,18 @@ export function proxyAuthMiddleware(config: ServerConfig): MiddlewareHandler<Pro
  * Creates an AbortController for upstream cancellation.
  */
 export function disconnectMiddleware(): MiddlewareHandler<ProxyEnv> {
-  return async (c, next) => {
+  return async (context, next) => {
     const controller = new AbortController()
-    c.set('abortController', controller)
+    context.set('abortController', controller)
 
     // Listen for client disconnect via the request signal
-    const reqSignal = c.req.raw.signal
+    const reqSignal = context.req.raw.signal
     const onAbort = (): void => {
-      const requestId = c.get('requestId')
+      const requestId = context.get('requestId')
       logDisconnect({
         requestId,
-        method: c.req.method,
-        path: c.req.path
+        method: context.req.method,
+        path: context.req.path
       })
       controller.abort()
     }
@@ -115,18 +118,18 @@ export function disconnectMiddleware(): MiddlewareHandler<ProxyEnv> {
  * Only applies to POST/PUT/PATCH methods.
  */
 export function bodySizeLimitMiddleware(config: ServerConfig): MiddlewareHandler<ProxyEnv> {
-  return async (c, next) => {
-    const method = c.req.method
+  return async (context, next) => {
+    const method = context.req.method
     if (method !== 'POST' && method !== 'PUT' && method !== 'PATCH') {
       await next()
       return undefined
     }
 
-    const contentLength = c.req.header('content-length')
+    const contentLength = context.req.header('content-length')
     if (contentLength !== undefined) {
       const length = Number.parseInt(contentLength, 10)
       if (Number.isFinite(length) && length > config.maxBodySize) {
-        return c.json(
+        return context.json(
           invalidRequest(
             `Request body too large. Maximum size: ${String(config.maxBodySize)} bytes`
           ),

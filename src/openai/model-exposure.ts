@@ -89,7 +89,7 @@ function filterExposedModels(
     return [...available]
   }
   const allowed = new Set(enabled)
-  return available.filter((m) => allowed.has(`${m.provider}/${m.id}`))
+  return available.filter((model) => allowed.has(`${model.provider}/${model.id}`))
 }
 
 // ---------------------------------------------------------------------------
@@ -114,27 +114,27 @@ function getPublicPrefix(provider: string, prefixes: Readonly<Record<string, str
 function findConflictGroups(models: readonly Model<Api>[]): Set<string>[] {
   // Map each raw model ID to the set of providers that offer it
   const modelToProviders = new Map<string, Set<string>>()
-  for (const m of models) {
-    const existing = modelToProviders.get(m.id)
+  for (const model of models) {
+    const existing = modelToProviders.get(model.id)
     if (existing === undefined) {
-      modelToProviders.set(m.id, new Set([m.provider]))
+      modelToProviders.set(model.id, new Set([model.provider]))
     } else {
-      existing.add(m.provider)
+      existing.add(model.provider)
     }
   }
 
   // Union-Find for providers
   const parent = new Map<string, string>()
 
-  function find(x: string): string {
-    let root = x
+  function find(provider: string): string {
+    let root = provider
     while (parent.get(root) !== root) {
-      const p = parent.get(root)
-      if (p === undefined) break
-      root = p
+      const parentProvider = parent.get(root)
+      if (parentProvider === undefined) break
+      root = parentProvider
     }
     // Path compression
-    let current = x
+    let current = provider
     while (current !== root) {
       const next = parent.get(current)
       if (next === undefined) break
@@ -144,29 +144,29 @@ function findConflictGroups(models: readonly Model<Api>[]): Set<string>[] {
     return root
   }
 
-  function union(a: string, b: string): void {
-    const ra = find(a)
-    const rb = find(b)
-    if (ra !== rb) {
-      parent.set(ra, rb)
+  function union(firstProvider: string, secondProvider: string): void {
+    const rootA = find(firstProvider)
+    const rootB = find(secondProvider)
+    if (rootA !== rootB) {
+      parent.set(rootA, rootB)
     }
   }
 
   // Initialize each provider as its own root
-  for (const m of models) {
-    if (!parent.has(m.provider)) {
-      parent.set(m.provider, m.provider)
+  for (const model of models) {
+    if (!parent.has(model.provider)) {
+      parent.set(model.provider, model.provider)
     }
   }
 
   // Union providers that share any model ID
   for (const providers of modelToProviders.values()) {
     if (providers.size <= 1) continue
-    const arr = [...providers]
-    const first = arr[0]
+    const sharingProviders = [...providers]
+    const first = sharingProviders[0]
     if (first === undefined) continue
-    for (let i = 1; i < arr.length; i++) {
-      const other = arr[i]
+    for (let providerIndex = 1; providerIndex < sharingProviders.length; providerIndex++) {
+      const other = sharingProviders[providerIndex]
       if (other !== undefined) {
         union(first, other)
       }
@@ -186,7 +186,7 @@ function findConflictGroups(models: readonly Model<Api>[]): Set<string>[] {
   }
 
   // Return only groups with more than one provider (actual conflicts)
-  return [...groupsByRoot.values()].filter((g) => g.size > 1)
+  return [...groupsByRoot.values()].filter((group) => group.size > 1)
 }
 
 function generateCollisionPrefixedIds(
@@ -202,12 +202,12 @@ function generateCollisionPrefixedIds(
   }
 
   const result = new Map<Model<Api>, string>()
-  for (const m of models) {
-    if (prefixedProviders.has(m.provider)) {
-      const prefix = getPublicPrefix(m.provider, prefixes)
-      result.set(m, `${prefix}/${m.id}`)
+  for (const model of models) {
+    if (prefixedProviders.has(model.provider)) {
+      const prefix = getPublicPrefix(model.provider, prefixes)
+      result.set(model, `${prefix}/${model.id}`)
     } else {
-      result.set(m, m.id)
+      result.set(model, model.id)
     }
   }
   return result
@@ -216,21 +216,21 @@ function generateCollisionPrefixedIds(
 function generateUniversalIds(models: readonly Model<Api>[]): Map<Model<Api>, string> | string {
   // Check for duplicates
   const seen = new Map<string, string>()
-  for (const m of models) {
-    const existing = seen.get(m.id)
+  for (const model of models) {
+    const existing = seen.get(model.id)
     if (existing !== undefined) {
       return (
-        `Universal mode conflict: model ID '${m.id}' is provided by both ` +
-        `'${existing}' and '${m.provider}'. Use 'collision-prefixed' or ` +
+        `Universal mode conflict: model ID '${model.id}' is provided by both ` +
+        `'${existing}' and '${model.provider}'. Use 'collision-prefixed' or ` +
         `'always-prefixed' mode, or reduce the exposed model set.`
       )
     }
-    seen.set(m.id, m.provider)
+    seen.set(model.id, model.provider)
   }
 
   const result = new Map<Model<Api>, string>()
-  for (const m of models) {
-    result.set(m, m.id)
+  for (const model of models) {
+    result.set(model, model.id)
   }
   return result
 }
@@ -240,9 +240,9 @@ function generateAlwaysPrefixedIds(
   prefixes: Readonly<Record<string, string>>
 ): Map<Model<Api>, string> {
   const result = new Map<Model<Api>, string>()
-  for (const m of models) {
-    const prefix = getPublicPrefix(m.provider, prefixes)
-    result.set(m, `${prefix}/${m.id}`)
+  for (const model of models) {
+    const prefix = getPublicPrefix(model.provider, prefixes)
+    result.set(model, `${prefix}/${model.id}`)
   }
   return result
 }
@@ -261,8 +261,8 @@ function validatePrefixUniqueness(
   // Collect providers that will use prefixes
   const providers = new Set<string>()
   if (mode === 'always-prefixed') {
-    for (const m of models) {
-      providers.add(m.provider)
+    for (const model of models) {
+      providers.add(model.provider)
     }
   } else {
     // collision-prefixed: only conflicting providers get prefixed
@@ -347,16 +347,16 @@ export function computeModelExposure(
   const byPublicId = new Map<string, ExposedModel>()
   const byCanonicalId = new Map<string, ExposedModel>()
 
-  for (const m of exposed) {
-    const publicId = idMap.get(m)
+  for (const model of exposed) {
+    const publicId = idMap.get(model)
     if (publicId === undefined) continue
 
-    const canonicalId = `${m.provider}/${m.id}`
+    const canonicalId = `${model.provider}/${model.id}`
     const entry: ExposedModel = {
       publicId,
       canonicalId,
-      model: m,
-      provider: m.provider
+      model,
+      provider: model.provider
     }
 
     models.push(entry)

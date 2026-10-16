@@ -203,19 +203,19 @@ function buildSettingItems(state: ProxyState): SettingItem[] {
  * Update descriptions on items that change dynamically based on the current value.
  */
 function refreshDescriptions(items: SettingItem[], config: ProxyConfig): void {
-  for (const item of items) {
-    switch (item.id) {
+  for (const settingItem of items) {
+    switch (settingItem.id) {
       case 'publicModelIdMode':
-        item.description = idModeDescription(config)
+        settingItem.description = idModeDescription(config)
         break
       case 'modelExposureMode':
-        item.description = exposureModeDescription(config)
+        settingItem.description = exposureModeDescription(config)
         break
       case 'customModels':
-        item.description = customModelsDescription(config)
+        settingItem.description = customModelsDescription(config)
         break
       case 'authToken':
-        item.description = authDescription(config)
+        settingItem.description = authDescription(config)
         break
     }
   }
@@ -225,24 +225,24 @@ function refreshDescriptions(items: SettingItem[], config: ProxyConfig): void {
 
 // Local type guards — the extension resolves against the built dist, so it
 // cannot import these from the source config module during development.
-function isPublicModelIdMode(v: string): v is PublicModelIdMode {
-  return v === 'collision-prefixed' || v === 'universal' || v === 'always-prefixed'
+function isPublicModelIdMode(mode: string): mode is PublicModelIdMode {
+  return mode === 'collision-prefixed' || mode === 'universal' || mode === 'always-prefixed'
 }
 
-function isModelExposureMode(v: string): v is ModelExposureMode {
-  return v === 'all' || v === 'scoped' || v === 'custom'
+function isModelExposureMode(mode: string): mode is ModelExposureMode {
+  return mode === 'all' || mode === 'scoped' || mode === 'custom'
 }
 
 function parsePositiveInt(value: string): number | undefined {
-  const n = Number.parseInt(value, 10)
-  return Number.isFinite(n) && n > 0 ? n : undefined
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
 }
 
 function generateAuthToken(): string {
   const bytes = new Uint8Array(AUTH_TOKEN_BYTES)
   crypto.getRandomValues(bytes)
   return Array.from(bytes)
-    .map((b) => b.toString(HEX_RADIX).padStart(HEX_BYTE_WIDTH, '0'))
+    .map((byte) => byte.toString(HEX_RADIX).padStart(HEX_BYTE_WIDTH, '0'))
     .join('')
 }
 
@@ -311,11 +311,11 @@ function applySetting(state: ProxyState, id: string, value: string): string | un
 
 export async function openSettingsPanel(
   state: ProxyState,
-  ctx: ExtensionCommandContext
+  context: ExtensionCommandContext
 ): Promise<void> {
   state.config = loadConfigFromFile()
 
-  await ctx.ui.custom<undefined>(
+  await context.ui.custom<undefined>(
     (tui, theme, _kb, done) => {
       const container = new Container()
       container.addChild(new Text(theme.fg('accent', theme.bold('Proxy Settings')), 1, 0))
@@ -329,7 +329,7 @@ export async function openSettingsPanel(
         (id, newValue) => {
           const generatedToken = applySetting(state, id, newValue)
           if (generatedToken !== undefined) {
-            ctx.ui.notify(`Auth token: ${generatedToken}`, 'info')
+            context.ui.notify(`Auth token: ${generatedToken}`, 'info')
           }
 
           // Update display value and descriptions in-place (preserves selection)
@@ -341,7 +341,7 @@ export async function openSettingsPanel(
             settingsList.updateValue('customModels', customModelsDisplay(state.config))
           }
 
-          void maybeAutoSyncZed(state, ctx)
+          void maybeAutoSyncZed(state, context)
           tui.requestRender()
         },
         () => done(undefined),

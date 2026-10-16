@@ -203,9 +203,9 @@ function convertAnyOf(
   }
 
   const converted: TSchema[] = []
-  for (let i = 0; i < branches.length; i++) {
-    const branchPath = `${path || 'root'}.anyOf[${String(i)}]`
-    const result = jsonSchemaToTypebox(branches[i], branchPath)
+  for (let branchIndex = 0; branchIndex < branches.length; branchIndex++) {
+    const branchPath = `${path || 'root'}.anyOf[${String(branchIndex)}]`
+    const result = jsonSchemaToTypebox(branches[branchIndex], branchPath)
     if (!result.ok) {
       return result
     }
@@ -221,15 +221,15 @@ function convertEnum(
   opts: Record<string, unknown>
 ): SchemaConversionResult {
   const stringValues: string[] = []
-  for (const v of values) {
-    if (typeof v !== 'string') {
+  for (const enumValue of values) {
+    if (typeof enumValue !== 'string') {
       return {
         ok: false,
         message: `Only string enums are supported at ${path || 'root'}`,
         path
       }
     }
-    stringValues.push(v)
+    stringValues.push(enumValue)
   }
   if (stringValues.length === 0) {
     return {
@@ -239,7 +239,7 @@ function convertEnum(
     }
   }
   // Use Type.Union of literals for string enums
-  const literals = stringValues.map((v) => Type.Literal(v))
+  const literals = stringValues.map((enumValue) => Type.Literal(enumValue))
   return { ok: true, schema: Type.Union(literals, opts) }
 }
 
@@ -249,7 +249,7 @@ function convertNullableType(
   path: string,
   opts: Record<string, unknown>
 ): SchemaConversionResult {
-  const nonNullTypes = typeArray.filter((t) => t !== 'null')
+  const nonNullTypes = typeArray.filter((typeName) => typeName !== 'null')
   if (nonNullTypes.length !== 1 || typeArray.length !== NULLABLE_TYPE_ARRAY_LENGTH) {
     return {
       ok: false,
@@ -310,9 +310,9 @@ function convertObject(
 
   const requiredSet = new Set<string>()
   if (Array.isArray(rawRequired)) {
-    for (const r of rawRequired) {
-      if (typeof r === 'string') {
-        requiredSet.add(r)
+    for (const requiredName of rawRequired) {
+      if (typeof requiredName === 'string') {
+        requiredSet.add(requiredName)
       }
     }
   }

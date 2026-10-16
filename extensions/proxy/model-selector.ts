@@ -25,8 +25,8 @@ type JumpDirection = 'prev' | 'next'
 function isSettingItem(value: unknown): value is SettingItem {
   if (value === null || typeof value !== 'object') return false
   if (!('id' in value)) return false
-  const v: { id: unknown } = value
-  return typeof v.id === 'string'
+  const candidate: { id: unknown } = value
+  return typeof candidate.id === 'string'
 }
 
 function getSettingsListItems(list: SettingsList): SettingItem[] {
@@ -37,8 +37,8 @@ function getSettingsListItems(list: SettingsList): SettingItem[] {
       : Reflect.get(list, 'items')
   if (!Array.isArray(raw)) return []
   const result: SettingItem[] = []
-  for (const item of raw) {
-    if (isSettingItem(item)) result.push(item)
+  for (const rawItem of raw) {
+    if (isSettingItem(rawItem)) result.push(rawItem)
   }
   return result
 }
@@ -73,12 +73,12 @@ function jumpProvider(
   providerOrder: readonly string[],
   direction: JumpDirection
 ): void {
-  const idx: unknown = Reflect.get(list, 'selectedIndex')
-  if (typeof idx !== 'number') return
+  const selectedIndex: unknown = Reflect.get(list, 'selectedIndex')
+  if (typeof selectedIndex !== 'number') return
   const display = getSettingsListItems(list)
   if (display.length === 0) return
 
-  const current = display[idx]
+  const current = display[selectedIndex]
   if (current === undefined) return
   const currentProv = current.id.split('/')[0] ?? ''
   const provIdx = providerOrder.indexOf(currentProv)
@@ -103,16 +103,16 @@ export function buildModelSelectorSubmenu(
 
   // Build provider order from sorted model list
   const providerOrder: string[] = []
-  for (const m of models) {
-    if (!providerOrder.includes(m.provider)) providerOrder.push(m.provider)
+  for (const model of models) {
+    if (!providerOrder.includes(model.provider)) providerOrder.push(model.provider)
   }
 
-  const items: SettingItem[] = models.map((m) => {
-    const canonical = `${m.provider}/${m.id}`
+  const items: SettingItem[] = models.map((model) => {
+    const canonical = `${model.provider}/${model.id}`
     return {
       id: canonical,
       label: canonical,
-      description: `Provider: ${m.provider}  |  Left/Right: jump provider`,
+      description: `Provider: ${model.provider}  |  Left/Right: jump provider`,
       currentValue: selected.has(canonical) ? 'true' : 'false',
       values: ['true', 'false']
     }

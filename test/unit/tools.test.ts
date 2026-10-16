@@ -73,7 +73,7 @@ describe('convertTools', () => {
         function: {
           name: 'tool_b',
           description: 'Tool B',
-          parameters: { type: 'object', properties: { x: { type: 'number' } } }
+          parameters: { type: 'object', properties: { amount: { type: 'number' } } }
         }
       }
     ])
