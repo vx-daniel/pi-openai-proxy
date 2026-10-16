@@ -236,7 +236,8 @@ Primary source:
 - pi `ModelRuntime` (credentials, catalogs and request auth in one place; Pi 1.x replaced
   `AuthStorage` and `ModelRegistry.getApiKeyAndHeaders()` with it)
 
-Completions run through `ModelRuntime.streamSimple()` / `completeSimple()`, which resolve
+Completions run through `ModelRuntime.streamSimple()` (a non-streaming request reads the stream's
+final message, as `completeSimple()` would), which resolves
 request auth themselves on every request: API keys, OAuth with refresh, model-specific headers,
 provider environment and an auth-resolved base URL (`ModelRuntime.prepareRequest`). The proxy
 only pre-checks that auth resolves (`getRequestAuth()`), so a route can answer 401 before a
@@ -686,7 +687,9 @@ Use an OpenAI-style shape:
 - `500` internal proxy failure
 - `502` malformed upstream/provider response
 - `503` provider unavailable or overloaded
-- `504` upstream timeout
+- `504` upstream timeout: the provider sent nothing for `upstreamTimeoutMs` (an idle timeout that
+  restarts on every upstream event, not a cap on the call; `src/pi/upstream-idle.ts`). A stream
+  that has already started ends with an error event naming the timeout instead.
 
 Error rules:
 
@@ -752,7 +755,8 @@ src/
 │   └── json-schema-to-typebox.ts -- JSON Schema -> TypeBox conversion
 └── pi/
     ├── registry.ts       -- ModelRuntime + SettingsManager init
-    └── complete.ts       -- ModelRuntime streamSimple/completeSimple bridge
+    ├── complete.ts       -- ModelRuntime streamSimple bridge
+    └── upstream-idle.ts  -- upstream idle timeout, relayed over pi's event stream
 ```
 
 ### Dead code
@@ -800,7 +804,7 @@ Build:
 - model resolution (canonical + shorthand with ambiguity detection)
 - `GET /v1/models`
 - `GET /v1/models/{model}` with encoded slash support
-- non-streaming chat completions via `ModelRuntime.completeSimple()`
+- non-streaming chat completions via `ModelRuntime.streamSimple()`'s final message
 - streaming chat completions via `ModelRuntime.streamSimple()`
 - request IDs and structured logging
 - disconnect cancellation via AbortController
