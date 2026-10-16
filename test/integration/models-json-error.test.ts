@@ -48,7 +48,9 @@ describe('a models.json that fails to load', () => {
       `{"providers":{"x":{"baseUrl":"http://127.0.0.1:9/v1","apiKey": ${KEY}}}}`
     )
 
-    expect(text).toContain('"modelsJsonError":"models.json is not valid JSON"')
+    // The exact wording (with or without a position) depends on Node's JSON.parse message, which
+    // test/unit/models-json-error.test.ts pins form by form.
+    expect(text).toMatch(/"modelsJsonError":"models\.json is not valid JSON( at [^"]+)?"/)
     expect(text).not.toContain('notarealsec')
     expect(lines.some((line) => line.includes('models.json is not valid JSON'))).toBe(true)
     for (const line of lines) expect(line).not.toContain('notarealsec')

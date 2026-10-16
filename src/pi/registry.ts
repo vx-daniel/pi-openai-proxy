@@ -31,14 +31,30 @@ const JSON_ERROR_LINE_COLUMN = /\(line (\d+) column (\d+)\)/
 const JSON_ERROR_OFFSET = /position (\d+)/
 
 /**
+ * pi's models.json error split into its message and the file's path. The last separator is the
+ * one pi appended: a parse snippet before it is file content and could, in principle, contain the
+ * same text.
+ */
+function splitModelsJsonError(error: string): { detail: string; path: string | undefined } {
+  const separator = error.lastIndexOf(MODELS_JSON_FILE_SEPARATOR)
+  return separator === -1
+    ? { detail: error, path: undefined }
+    : {
+        detail: error.slice(0, separator),
+        path: error.slice(separator + MODELS_JSON_FILE_SEPARATOR.length)
+      }
+}
+
+/**
  * pi's models.json error, reduced to what cannot quote the file. JSON.parse messages can include a
  * slice of the text around the fault (`Unexpected token 'o', ..."apiKey": notarealsec"... is not
  * valid JSON`), which is often a key, so a parse error keeps only where it is. Load errors (the
- * fs message) and schema errors (property paths and TypeBox's fixed messages) carry no file
- * content and pass through. The file's path is dropped; callers that log it take it separately.
+ * fs message) and schema errors (property paths, which name the user's providers and models, and
+ * TypeBox's fixed messages) quote no values and pass through. The file's path is dropped; callers
+ * that log it take it separately.
  */
 export function describeModelsJsonError(error: string): string {
-  const [detail = error] = error.split(MODELS_JSON_FILE_SEPARATOR)
+  const { detail } = splitModelsJsonError(error)
   if (!detail.startsWith(MODELS_JSON_PARSE_PREFIX)) return detail
   const lineColumn = JSON_ERROR_LINE_COLUMN.exec(detail)
   if (lineColumn !== null) {
@@ -58,11 +74,12 @@ export async function initRegistry(): Promise<string | undefined> {
   const cwd = process.cwd()
   runtime = await ModelRuntime.create()
   settingsManager = SettingsManager.create(cwd)
-  const loadError = getModelsJsonError()
-  if (loadError !== undefined) {
+  const rawError = runtime.getError()
+  const loadError = rawError === undefined ? undefined : describeModelsJsonError(rawError)
+  if (rawError !== undefined) {
     registryLogger.warn('models.json failed to load; using built-in models only: {error}', {
       error: loadError,
-      path: runtime.getError()?.split(MODELS_JSON_FILE_SEPARATOR)[1]
+      path: splitModelsJsonError(rawError).path
     })
   }
   registryLogger.info('Model runtime ready with {availableModelCount} available models', {
