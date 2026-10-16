@@ -2,12 +2,12 @@
  * Hono middleware: request ID injection, proxy auth, body size limits, structured logging.
  */
 
+import type { MiddlewareHandler } from "hono";
 import type { ServerConfig } from "@proxy/config/env";
 import { authenticationError, invalidRequest } from "@proxy/server/errors";
 import { logDisconnect, logRequest, logResponse } from "@proxy/server/logging";
 import { generateRequestId } from "@proxy/server/request-id";
 import type { ProxyEnv } from "@proxy/server/types";
-import type { MiddlewareHandler } from "hono";
 
 /**
  * Inject request ID, upstream API key, and logging context into every request.
@@ -85,21 +85,19 @@ export function disconnectMiddleware(): MiddlewareHandler<ProxyEnv> {
 
 		// Listen for client disconnect via the request signal
 		const reqSignal = c.req.raw.signal;
-		if (reqSignal !== undefined) {
-			const onAbort = () => {
-				const requestId = c.get("requestId");
-				logDisconnect({
-					requestId,
-					method: c.req.method,
-					path: c.req.path,
-				});
-				controller.abort();
-			};
-			if (reqSignal.aborted) {
-				onAbort();
-			} else {
-				reqSignal.addEventListener("abort", onAbort, { once: true });
-			}
+		const onAbort = () => {
+			const requestId = c.get("requestId");
+			logDisconnect({
+				requestId,
+				method: c.req.method,
+				path: c.req.path,
+			});
+			controller.abort();
+		};
+		if (reqSignal.aborted) {
+			onAbort();
+		} else {
+			reqSignal.addEventListener("abort", onAbort, { once: true });
 		}
 
 		await next();

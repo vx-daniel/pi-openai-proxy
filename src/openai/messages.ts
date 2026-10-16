@@ -21,8 +21,8 @@ import type {
 	ToolResultMessage,
 	UserMessage,
 } from "@earendil-works/pi-ai";
-import type { OpenAIMessage } from "@proxy/openai/schemas";
 import * as z from "zod";
+import type { OpenAIMessage } from "@proxy/openai/schemas";
 
 // Tool-call arguments are JSON values (Pi 1.x types them as JsonObject), not arbitrary objects.
 const toolArgsSchema = z.record(z.string().trim(), z.json());
@@ -55,7 +55,7 @@ export function convertMessages(messages: OpenAIMessage[]): ConversionResult {
 	// (Google) require the function name on tool result messages.
 	const toolCallNames = new Map<string, string>();
 	for (const msg of messages) {
-		if (msg !== undefined && msg.role === "assistant" && "tool_calls" in msg) {
+		if (msg.role === "assistant" && "tool_calls" in msg) {
 			for (const tc of msg.tool_calls ?? []) {
 				toolCallNames.set(tc.id, tc.function.name);
 			}
@@ -77,7 +77,7 @@ export function convertMessages(messages: OpenAIMessage[]): ConversionResult {
 		} else if (msg.role === "assistant") {
 			const assistantMsg = convertAssistantMessage(msg.content ?? null, msg.tool_calls);
 			piMessages.push(assistantMsg);
-		} else if (msg.role === "tool") {
+		} else {
 			const toolName = toolCallNames.get(msg.tool_call_id) ?? "";
 			const toolMsg = convertToolMessage(msg.content, msg.tool_call_id, toolName);
 			piMessages.push(toolMsg);

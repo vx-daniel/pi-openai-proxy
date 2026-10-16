@@ -15,8 +15,8 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { isRecord } from "@proxy/utils/guards";
 import * as z from "zod";
+import { isRecord } from "@proxy/utils/guards";
 
 // ---------------------------------------------------------------------------
 // Types

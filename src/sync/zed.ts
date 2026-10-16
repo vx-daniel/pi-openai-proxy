@@ -8,8 +8,8 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { ExposedModel } from "@proxy/openai/model-exposure";
 import { applyEdits, type ModificationOptions, modify, parse } from "jsonc-parser";
+import type { ExposedModel } from "@proxy/openai/model-exposure";
 
 // ---------------------------------------------------------------------------
 // Types

@@ -95,8 +95,8 @@ export function mapFinishReason(reason: StopReason): string {
  * Agent does) saw about 0.04% of the real context.
  */
 export function mapUsage(usage: Usage): OpenAIUsage {
-	const cacheReadTokens = usage.cacheRead ?? 0;
-	const cacheWriteTokens = usage.cacheWrite ?? 0;
+	const cacheReadTokens = usage.cacheRead;
+	const cacheWriteTokens = usage.cacheWrite;
 	return {
 		prompt_tokens: usage.input + cacheReadTokens + cacheWriteTokens,
 		completion_tokens: usage.output,

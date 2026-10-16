@@ -7,6 +7,8 @@
  * - POST /v1/chat/completions
  */
 
+import { Hono } from "hono";
+import { stream as honoStream } from "hono/streaming";
 import type { ServerConfig } from "@proxy/config/env";
 import { loadConfigFromFile } from "@proxy/config/schema";
 import { convertMessages } from "@proxy/openai/messages";
@@ -39,8 +41,6 @@ import {
 	logUpstreamOverload,
 } from "@proxy/server/logging";
 import type { ProxyEnv } from "@proxy/server/types";
-import { Hono } from "hono";
-import { stream as honoStream } from "hono/streaming";
 
 /**
  * Read exposure config. In production this re-reads the config file on each

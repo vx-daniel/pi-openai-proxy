@@ -24,8 +24,8 @@
  * - if/then/else
  */
 
-import { isRecord } from "@proxy/utils/guards";
 import { type TSchema, Type } from "typebox";
+import { isRecord } from "@proxy/utils/guards";
 
 export interface SchemaConversionSuccess {
 	readonly ok: true;

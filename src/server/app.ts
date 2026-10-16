@@ -2,6 +2,7 @@
  * Hono application assembly: middleware + routes.
  */
 
+import { Hono } from "hono";
 import type { ServerConfig } from "@proxy/config/env";
 import {
 	bodySizeLimitMiddleware,
@@ -11,7 +12,6 @@ import {
 } from "@proxy/server/middleware";
 import { createRoutes, type ExposureConfigReader } from "@proxy/server/routes";
 import type { ProxyEnv } from "@proxy/server/types";
-import { Hono } from "hono";
 
 export function createApp(
 	config: ServerConfig,
