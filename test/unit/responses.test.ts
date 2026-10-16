@@ -39,77 +39,101 @@ describe('mapUsage', () => {
 })
 
 describe('buildChatCompletion', () => {
-  test('builds a valid non-streaming response', () => {
-    const message: AssistantMessage = {
+  function assistantMessage(
+    content: AssistantMessage['content'],
+    stopReason: StopReason
+  ): AssistantMessage {
+    return {
       role: 'assistant',
-      content: [{ type: 'text', text: 'Hello there!' }],
-      api: 'openai-completions',
-      provider: 'openai',
-      model: 'gpt-4o',
+      content,
+      api: 'anthropic-messages',
+      provider: 'anthropic',
+      model: 'claude-haiku-5-5',
       usage: {
         input: 10,
         output: 5,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 15,
-        cost: { input: 0.001, output: 0.002, cacheRead: 0, cacheWrite: 0, total: 0.003 }
+        cacheRead: 200,
+        cacheWrite: 30,
+        totalTokens: 245,
+        cost: { input: 0.001, output: 0.002, cacheRead: 0.0004, cacheWrite: 0.0003, total: 0.0037 }
       },
-      stopReason: 'stop',
-      timestamp: Date.now()
+      stopReason,
+      timestamp: 0
     }
+  }
 
-    const result = buildChatCompletion('req-123', 'openai/gpt-4o', message)
-    expect(result.id).toBe('req-123')
-    expect(result.object).toBe('chat.completion')
-    expect(result.model).toBe('openai/gpt-4o')
-    expect(result.choices).toHaveLength(1)
+  // Catches any drift in the public response: a field dropped or renamed, an extra field at the
+  // top level, or pi metadata leaving `x_pi` (AGENTS.md: pi-specific metadata goes under `x_pi`).
+  test('a text answer has exactly the OpenAI chat.completion shape, with pi metadata under x_pi', () => {
+    const result = buildChatCompletion(
+      'req-123',
+      'anthropic/claude-haiku-5-5',
+      assistantMessage([{ type: 'text', text: 'Hello there!' }], 'stop')
+    )
 
-    const choice = result.choices[0]
-    expect(choice?.message.role).toBe('assistant')
-    expect(choice?.message.content).toBe('Hello there!')
-    expect(choice?.message.tool_calls).toBeUndefined()
-    expect(choice?.finish_reason).toBe('stop')
-
-    expect(result.usage.prompt_tokens).toBe(10)
-    expect(result.usage.completion_tokens).toBe(5)
-    expect(result.usage.total_tokens).toBe(15)
-  })
-
-  test('builds response with tool calls', () => {
-    const message: AssistantMessage = {
-      role: 'assistant',
-      content: [
+    expect(result).toEqual({
+      id: 'req-123',
+      object: 'chat.completion',
+      created: expect.any(Number) as number,
+      model: 'anthropic/claude-haiku-5-5',
+      system_fingerprint: null,
+      choices: [
         {
-          type: 'toolCall',
-          id: 'tc_1',
-          name: 'get_weather',
-          arguments: { city: 'SF' }
+          index: 0,
+          message: { role: 'assistant', content: 'Hello there!' },
+          finish_reason: 'stop'
         }
       ],
-      api: 'openai-completions',
-      provider: 'openai',
-      model: 'gpt-4o',
       usage: {
-        input: 10,
-        output: 20,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 30,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+        prompt_tokens: 240,
+        completion_tokens: 5,
+        total_tokens: 245,
+        prompt_tokens_details: { cached_tokens: 200, cache_write_tokens: 30 }
       },
-      stopReason: 'toolUse',
-      timestamp: Date.now()
-    }
+      x_pi: {
+        cost: { input: 0.001, output: 0.002, cacheRead: 0.0004, cacheWrite: 0.0003, total: 0.0037 },
+        cache_read_tokens: 200,
+        cache_write_tokens: 30
+      }
+    })
+  })
 
-    const result = buildChatCompletion('req-456', 'openai/gpt-4o', message)
-    expect(result.choices[0]?.finish_reason).toBe('tool_calls')
-    expect(result.choices[0]?.message.content).toBeNull()
-    expect(result.choices[0]?.message.tool_calls).toHaveLength(1)
+  // Catches tool calls mis-shaped: arguments sent as an object instead of a JSON string, a call
+  // lost or reordered, text where OpenAI clients expect null, or the wrong finish reason.
+  test('tool calls have exactly the OpenAI shape, in order, with arguments as JSON text', () => {
+    const result = buildChatCompletion(
+      'req-456',
+      'anthropic/claude-haiku-5-5',
+      assistantMessage(
+        [
+          { type: 'toolCall', id: 'tc_1', name: 'get_weather', arguments: { city: 'Oslo' } },
+          { type: 'toolCall', id: 'tc_2', name: 'get_time', arguments: { zone: 'CET' } }
+        ],
+        'toolUse'
+      )
+    )
 
-    const tc = result.choices[0]?.message.tool_calls?.[0]
-    expect(tc?.id).toBe('tc_1')
-    expect(tc?.type).toBe('function')
-    expect(tc?.function.name).toBe('get_weather')
-    expect(tc?.function.arguments).toBe('{"city":"SF"}')
+    expect(result.choices).toEqual([
+      {
+        index: 0,
+        message: {
+          role: 'assistant',
+          content: null,
+          tool_calls: [
+            {
+              id: 'tc_1',
+              type: 'function',
+              function: { name: 'get_weather', arguments: '{"city":"Oslo"}' }
+            },
+            {
+              id: 'tc_2',
+              type: 'function',
+              function: { name: 'get_time', arguments: '{"zone":"CET"}' }
+            }
+          ]
+        },
+        finish_reason: 'tool_calls'
+      }
+    ])
   })
 })

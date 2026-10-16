@@ -1,15 +1,17 @@
 import { convertTools } from '@proxy/openai/tools'
-import { describe, expect, test } from 'vite-plus/test'
-
-function schemaValue(schema: unknown, key: string): unknown {
-  if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) {
-    return undefined
-  }
-  return Object.getOwnPropertyDescriptor(schema, key)?.value
-}
+import { assert, describe, expect, test } from 'vite-plus/test'
 
 describe('convertTools', () => {
-  test('converts a simple function tool', () => {
+  /** The schema pi sends upstream, as JSON: TypeBox adds symbol keys that never leave the process. */
+  function asJson(schema: unknown): unknown {
+    return JSON.parse(JSON.stringify(schema))
+  }
+
+  // Catches a converter that ignores `parameters` (an empty object schema would pass a type check),
+  // drops `required` or descriptions, or encodes an enum as something other than const branches.
+  // Only keywords inside the converter's supported subset are used here: the rest are dropped,
+  // which is #37, and must not be pinned by this test.
+  test('converts a function tool into exactly the schema sent upstream', () => {
     const result = convertTools([
       {
         type: 'function',
@@ -20,42 +22,45 @@ describe('convertTools', () => {
             type: 'object',
             properties: {
               city: { type: 'string', description: 'The city name' },
-              unit: { type: 'string', enum: ['celsius', 'fahrenheit'] }
+              unit: { type: 'string', enum: ['celsius', 'fahrenheit'] },
+              days: { type: 'integer' },
+              tags: { type: 'array', items: { type: 'string' } }
             },
             required: ['city']
           }
         }
       }
     ])
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    expect(result.tools).toHaveLength(1)
-    const tool = result.tools[0]
-    expect(tool).toBeDefined()
-    if (tool === undefined) return
-    expect(tool.name).toBe('get_weather')
-    expect(tool.description).toBe('Get the weather for a city')
-    expect(schemaValue(tool.parameters, 'type')).toBe('object')
+    assert(result.ok, 'expected the tool to convert')
+    const [tool] = result.tools
+
+    expect(tool?.name).toBe('get_weather')
+    expect(tool?.description).toBe('Get the weather for a city')
+    expect(asJson(tool?.parameters)).toEqual({
+      type: 'object',
+      required: ['city'],
+      properties: {
+        city: { type: 'string', description: 'The city name' },
+        unit: {
+          anyOf: [
+            { type: 'string', const: 'celsius' },
+            { type: 'string', const: 'fahrenheit' }
+          ]
+        },
+        days: { type: 'integer' },
+        tags: { type: 'array', items: { type: 'string' } }
+      }
+    })
   })
 
-  test('converts a tool without parameters', () => {
+  // Catches a tool without `parameters` sent with no schema, which providers reject.
+  test('gives a tool without parameters an empty object schema', () => {
     const result = convertTools([
-      {
-        type: 'function',
-        function: {
-          name: 'list_all',
-          description: 'List everything'
-        }
-      }
+      { type: 'function', function: { name: 'list_all', description: 'List everything' } }
     ])
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    expect(result.tools).toHaveLength(1)
-    const tool = result.tools[0]
-    expect(tool).toBeDefined()
-    if (tool === undefined) return
-    expect(tool.name).toBe('list_all')
-    expect(schemaValue(tool.parameters, 'type')).toBe('object')
+    assert(result.ok, 'expected the tool to convert')
+
+    expect(asJson(result.tools[0]?.parameters)).toEqual({ type: 'object', properties: {} })
   })
 
   test('converts multiple tools', () => {
