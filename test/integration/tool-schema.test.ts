@@ -28,7 +28,12 @@ const records: { level: string; message: string }[] = []
 
 beforeAll(async () => {
   mock = await startMockProvider({ echo: sse([...textChunks('ok'), finishChunk('stop')]) })
-  agentDir = await loadFixtureAgentDir({ modelsJson: { providers: { mock: mock.provider() } } })
+  // Strict-capable, so `strict: true` applies and pi checks the schema against strict mode (#44).
+  const provider = {
+    ...mock.provider(),
+    models: [{ id: 'echo', compat: { supportsStrictMode: true } }]
+  }
+  agentDir = await loadFixtureAgentDir({ modelsJson: { providers: { mock: provider } } })
   configureLogging({
     level: 'trace',
     format: 'json',
@@ -134,9 +139,13 @@ describe('tool parameter schemas', () => {
     })
 
     expect(response.status).toBe(HTTP_OK)
+    // The tool is strict and the model strict-capable, so pi adds `required` and
+    // `additionalProperties`; `$schema` must not be among the keys.
     expect(lastUpstreamTools()).toEqual([
       expect.objectContaining({
-        function: expect.objectContaining({ parameters: { type: 'object', properties: {} } })
+        function: expect.objectContaining({
+          parameters: { type: 'object', properties: {}, required: [], additionalProperties: false }
+        })
       })
     ])
     expect(records).toContainEqual({

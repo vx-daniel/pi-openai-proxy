@@ -2,7 +2,7 @@
  * Shared helpers for the payload passthrough unit tests.
  */
 
-import type { ChatCompletionRequest, OpenAIFunctionTool } from '@proxy/openai/schemas'
+import type { ChatCompletionRequest } from '@proxy/openai/schemas'
 import { isRecord } from '@proxy/utils/guards'
 
 /**
@@ -24,18 +24,5 @@ export function minimalRequest(
     model: 'openai/gpt-4o',
     messages: [{ role: 'user', content: 'Hello' }],
     ...overrides
-  }
-}
-
-/** Build an OpenAI function tool definition with optional strict flag. */
-export function makeTool(name: string, strict?: boolean | null): OpenAIFunctionTool {
-  return {
-    type: 'function',
-    function: {
-      name,
-      description: `Tool ${name}`,
-      parameters: { type: 'object', properties: {} },
-      ...(strict === undefined ? {} : { strict })
-    }
   }
 }

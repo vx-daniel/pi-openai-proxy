@@ -329,8 +329,9 @@ unsupported parameters clearly instead of silently ignoring them.
 
 ### `strict` on function tools silent drop
 
-- [x] Forward `strict` flag via `onPayload` by patching the upstream payload after pi SDK builds it
-- [x] Add unit tests for strict flag collection and payload patching
+- [x] ~~Forward `strict` flag via `onPayload` by patching the upstream payload~~ (reached chat completions only)
+- [x] Map `strict: true` to pi's `constrainedSampling` ("prefer"), applied per API by pi (#44)
+- [x] Integration tests per API family: completions, Responses, Anthropic, fallback, strict off
 
 ### PLAN.md documentation drift
 

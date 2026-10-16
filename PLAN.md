@@ -432,16 +432,28 @@ unknown payload fields, so the proxy skips injection entirely for those APIs. Th
 are still accepted by the proxy schema — they just have no effect on non-compatible
 providers.
 
-### `strict` on function tools — resolved
+### `strict` on function tools — strict where supported (#44)
 
-The `strict` flag on function tool definitions is forwarded to upstream providers via
-`onPayload`. The pi SDK's `Tool` interface has no `strict` field and the SDK always sets
-`strict: false` when building the upstream payload. The proxy extracts per-tool strict
-flags from the original request and patches them into the payload after the SDK builds it.
+A tool's `strict: true` maps to pi's constrained sampling,
+`constrainedSampling: { type: "json_schema", strict: "prefer" }` (`src/openai/tools.ts`). Each pi
+API adapter (OpenAI chat completions and Responses, Azure, Codex, Anthropic, Google, Bedrock,
+Mistral) decides from the model's `compat` whether strict applies, rewrites the schema with
+`makeStrictJsonSchema` (every property required, optional ones nullable,
+`additionalProperties: false`), and sends `strict: true` in that API's own shape. `strict: false`,
+`null` or absent sends no strict sampling.
 
-This means `strict: true` reaches OpenAI and compatible providers correctly. Like all
-passthrough fields, `strict` is only injected for OpenAI-compatible APIs. Non-compatible
-providers are unaffected.
+Before #44 the proxy patched `tools[i].function.strict` in `onPayload`. Only chat completions has
+that shape, so strict was silently dropped on every other API, and forced onto chat-completions
+endpoints whether or not they support it, with the schema as sent.
+
+**Known gap, by decision:** where strict cannot apply, the tool is sent without it, and neither the
+client nor the log is told. That happens when pi does not mark the model strict-capable (its
+default for OpenAI-compatible endpoints, including custom `models.json` models without
+`compat.supportsStrictMode` / `supportsStrictTools`), or when the schema is outside the
+provider's strict subset (Anthropic refuses `minimum`, `maximum`, `multipleOf`, …). `"require"`
+would refuse those requests instead, but it would break every client that sends `strict: true` by
+default on most non-OpenAI routes. Clients that need the guarantee must validate tool arguments
+themselves. docker-agent sends no per-tool `strict` on Chat Completions, so it is unaffected.
 
 ### Tool schema keywords — resolved
 
@@ -449,7 +461,8 @@ Before #37, the converter kept only the structure (`type`, `properties`, `requir
 `enum`, `anyOf`, `description`) and silently dropped every other keyword: ranges, lengths,
 `pattern`, `format`, defaults, and `additionalProperties: false`. The model saw looser schemas
 than the client wrote, and `strict: true` tools reached OpenAI without the
-`additionalProperties: false` its strict mode requires on every object.
+`additionalProperties: false` its strict mode requires on every object (see #44 above for how
+strict is applied now).
 
 Supported constraints and annotations are now carried upstream, meta declarations are dropped
 and logged, and any other keyword is rejected with `422` (see "Tool schema policy"). Clients
