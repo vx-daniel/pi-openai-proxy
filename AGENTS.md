@@ -63,6 +63,8 @@ For detailed rationale and edge cases, defer to [`PLAN.md`](PLAN.md) instead of 
 
 When you change code, run the smallest relevant checks first, then expand as needed.
 
+Lint rules are the Viaanix shared set, copied into `vite.config.ts`. Lint passes only with zero warnings. Fix the code, not the rule; if a line must break a rule, use `// oxlint-disable-next-line <rule> -- <reason>`.
+
 Common commands:
 
 ```bash

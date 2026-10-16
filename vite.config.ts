@@ -17,8 +17,9 @@ export default defineConfig({
 	},
 
 	lint: {
-		// Rules copied from Viaanix/oxc-config-viaanix v4.0.0 (oxlintrc.json, oxlintrc.ts.json,
-		// oxlintrc.type-aware.json, oxlintrc.strict.json), flattened, then this repo's additions.
+		// Rules copied from Viaanix/oxc-config-viaanix v4.0.0 (1a27314) plus its uncommitted
+		// `max-statements: off` test override: oxlintrc.json, oxlintrc.ts.json,
+		// oxlintrc.type-aware.json, and oxlintrc.strict.json, flattened. Repo additions follow.
 		ignorePatterns: ["dist/**"],
 		options: {
 			typeAware: true,
@@ -112,10 +113,11 @@ export default defineConfig({
 			"no-unsafe-optional-chaining": "error",
 			"no-unused-labels": "error",
 			"no-unused-private-class-members": "error",
+			// repo: stricter than Viaanix (args: none)
 			"no-unused-vars": [
 				"error",
 				{ args: "all", argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrors: "none" },
-			], // repo: stricter than Viaanix (args: none)
+			],
 			"no-useless-backreference": "error",
 			"no-useless-catch": "error",
 			"no-useless-escape": "error",

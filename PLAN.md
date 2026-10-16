@@ -50,7 +50,7 @@ Strict tooling through [Vite+](https://viteplus.dev), configured in `vite.config
 
 - **TypeScript**: ultra-strict (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noPropertyAccessFromIndexSignature`)
 - **Oxfmt** (`vp fmt`): tabs, 100 columns, sorted imports; Markdown is left as written
-- **Oxlint** (`vp lint`): type-aware with type checking (`no-unsafe-*`, `strict-boolean-expressions`, `consistent-type-assertions`, `no-floating-promises`, `no-unnecessary-condition`, `no-explicit-any`), zod plugin, import-alias plugin, and repo rules in `lint/repo-rules.ts` (`no-enum`, `no-delete`, `no-implicit-any-let`)
+- **Oxlint** (`vp lint`): the Viaanix shared rules (copied and flattened from `Viaanix/oxc-config-viaanix` v4.0.0 strict: base, TypeScript, type-aware, strict layers), type checking, `maxWarnings: 0`, and `reportUnusedDisableDirectives: deny`; plus repo additions: `no-unsafe-type-assertion`, `no-unnecessary-condition`, stricter `no-unused-vars`, zod plugin, import-alias plugin, and repo rules in `lint/repo-rules.ts` (`no-enum`, `no-delete`, `no-implicit-any-let`). `no-console` is off only for `src/server/logging.ts` and `src/index.ts`
 - **`vp check`**: format, lint, and type check in one pass
 - **Vitest** (`vp test`): tests import from `vite-plus/test`
 - **tsdown** (`vp pack`): ESM build with `.d.ts`
@@ -741,7 +741,7 @@ No production code imports it. Remove it along with its test file.
 
 `routes.ts` is the sole composition root (267 lines, 15 imports). The chat completions handler is ~170 lines covering body parse, validate, resolve model, convert messages, convert tools, check API key, and stream/non-stream branching. This is manageable for the current three-endpoint surface but should be decomposed if new endpoints or complex middleware (agentic mode) are added.
 
-`extensions/proxy.ts` (896 lines) mixes process management, config UI, model queries, verification logic, and TUI rendering. It is isolated from the core proxy. If it grows further (agentic mode controls), extract helpers into separate extension modules.
+The pi extension lives in `extensions/proxy/`, isolated from the core proxy. pi loads `index.ts` (the `/proxy` command family and lifecycle hooks) as the single extension; the sibling modules split the rest: `state.ts` (shared config/registry state), `process.ts` (PID file, probe, start/stop/status), `reports.ts` (show/models/verify), `zed-sync.ts`, `settings-panel.ts`, and `model-selector.ts`. Add new extension modules there rather than as top-level files in `extensions/`, which pi would load as separate extensions.
 
 The proxy has no concurrency controls. Node's runtime handles request parallelism, but
 there are no semaphores, connection pools, or circuit breakers protecting upstream

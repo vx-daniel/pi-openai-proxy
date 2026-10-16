@@ -115,6 +115,7 @@ Research-backed decisions on deferred compatibility and resilience items. Analys
 
 - [x] Add a `chat_request` log line naming the requested and the resolved model of each chat request
 - [x] Consolidate tooling on Vite+ (Oxfmt, Oxlint + tsgolint, Vitest, tsdown, `vp` hooks) and run on Node instead of Bun
+- [x] Adopt the Viaanix lint rules (copied into `vite.config.ts`) with zero warnings
 
 ## Phase 4 — Monorepo and proper CLI
 
