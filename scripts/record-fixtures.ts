@@ -86,9 +86,18 @@ const SCENARIOS: readonly Scenario[] = [
     options: { maxTokens: 512 }
   },
   {
+    // Adaptive thinking: the model decides whether to think, and skips it for easy arithmetic
+    // (17 × 23 recorded no thinking block). This needs a few steps it cannot do at a glance.
     name: 'thinking',
-    context: { messages: [userMessage('What is 17 times 23? Answer with the number only.')] },
-    options: { maxTokens: 4096, reasoning: 'low' }
+    context: {
+      messages: [
+        userMessage(
+          'How many integers from 1 to 2000 are divisible by 6 or 10 but not by 15? ' +
+            'Work it out carefully, then answer with the number only.'
+        )
+      ]
+    },
+    options: { maxTokens: 8192, reasoning: 'high' }
   },
   {
     name: 'cache-read',

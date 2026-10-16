@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "api": "anthropic-messages",
+  "scenario": "thinking",
+  "model": "claude-haiku-5-5",
+  "recordedAt": "2026-10-16T17:33:11.249Z",
+  "piVersion": "1.3.0",
+  "request": {
+    "path": "/v1/messages?beta=true",
+    "headers": {
+      "anthropic-version": "2023-06-01",
+      "user-agent": "claude-cli/2.1.280",
+      "x-app": "cli",
+      "content-type": "application/json",
+      "anthropic-beta": "claude-code-20250219,oauth-2025-04-20,mid-conversation-output-config-2026-07-01,thinking-binding-controls-2026-08-01"
+    },
+    "body": {
+      "model": "claude-haiku-5-5",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "How many integers from 1 to 2000 are divisible by 6 or 10 but not by 15? Work it out carefully, then answer with the number only.",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ]
+        },
+        {
+          "role": "system",
+          "content": [],
+          "output_config": {
+            "effort": "high"
+          }
+        }
+      ],
+      "max_tokens": 8192,
+      "stream": true,
+      "system": [
+        {
+          "type": "text",
+          "text": "You are Claude Code, Anthropic's official CLI for Claude.",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      ],
+      "thinking": {
+        "type": "adaptive",
+        "display": "summarized",
+        "block_binding": {
+          "prefix_mismatch_behavior": "drop_block"
+        }
+      },
+      "output_config": {
+        "effort": "high"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "contentType": "text/event-stream; charset=utf-8",
+    "chunks": [
+      "event: message_start\ndata",
+      ": {\"type\":\"message_start\",\"message\":{\"model\":\"claude-haiku-5-5\",\"id\":\"msg_011Cg6KKfv2VvrMWUt8JRVCQ\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":79,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":6,\"service_tier\":\"standard\",\"inference_geo\":\"global\",\"speed\":\"standard\"},\"input_transformations\":[],\"diagnostics\":null}         }\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}       }\n\n",
+      "event: ping\ndata: {\"type\": \"ping\"}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"I need\"}  }\n\n",
+      "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" to count numbers div\"}  }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"isible by 6 or \"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"10 but not 15, so\"}              }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" I'm comput\"}         }\n\n",
+      "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"ing |A∪B|\"}    }\n\n",
+      "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" using\"}    }\n\n",
+      "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" inclusion-exclus\"}   }\n\n",
+      "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"ion: 333 +\"}    }\n\n",
+      "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" 200 − 66 =\"}             }\n\n",
+      "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" 467, then I'll need\"}               }\n\n",
+      "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" to subtract the overlap\"}               }\n\n",
+      "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" with mult\"}  }\n\n",
+      "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"iples of 15.\"}      }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"\\n\\n\"}}\n\n",
+      "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"Since any number\"}        }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" divisible by both 15\"}    }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" and 6 (\"}        }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"or 15\"}        }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" and 10) must be div\"}  }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"isible by 30, that over\"}             }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"lap equ\"}     }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"als the count\"}           }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" of multiples of 30,\"}     }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" which is 66. So the answ\"}  }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"er is 467 − 66\"}        }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" = 401,\"}           }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" and\"}      }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" I verify this by\"}            }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" checking the coun\"}  }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"ts separ\"}             }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"ately: 267 mult\"}         }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"iples of 6 exc\"}        }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"luding 15, plus \"}           }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"134 multiples of 10\"}  }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" excluding 15, with\"}           }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" no double\"}    }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"-counting,\"}  }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" conf\"}       }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"irming 401.\"}         }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"\\n\\n\"}     }\n\n",
+      "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"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\"}             }\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0       }\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}            }\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"**401**\"}     }\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1     }\n\n",
+      "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"container\":null},\"usage\":{\"input_tokens\":79,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":547,\"output_tokens_details\":{\"thinking_tokens\":542}}         }\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"          }\n\n"
+    ]
+  }
+}
