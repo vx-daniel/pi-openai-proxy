@@ -163,6 +163,24 @@ describe('chat request logging', () => {
       ['INFO', '/v1/models', 200]
     ])
   })
+
+  // Catches the per-request upstream key reaching any log line, at any level: it rides the request
+  // through the middleware, model resolution, the auth pre-check and the upstream call (which
+  // fails here, at an address nothing listens on, so the error path logs too).
+  test('never logs the X-Pi-Upstream-Api-Key value, at any level', async () => {
+    const upstreamKey = 'notarealsecret-per-request-upstream-key'
+    const response = await app.request('/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Pi-Upstream-Api-Key': upstreamKey },
+      body: JSON.stringify({ model: FIXTURE_MODEL, messages: [{ role: 'user', content: 'Hi' }] })
+    })
+
+    expect(response.status).toBeGreaterThanOrEqual(500)
+    expect(logged('pi-openai-proxy.server.http')[0]?.properties).toMatchObject({
+      hasUpstreamApiKey: true
+    })
+    expect(lines.join('')).not.toContain(upstreamKey)
+  })
 })
 
 describe('proxy auth logging', () => {
