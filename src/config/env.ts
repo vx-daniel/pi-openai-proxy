@@ -28,7 +28,7 @@ export interface ServerConfig {
   readonly remoteImagesEnabled: boolean
   /** Maximum request body size in bytes. */
   readonly maxBodySize: number
-  /** Upstream request timeout in milliseconds. */
+  /** Milliseconds the upstream provider may send nothing before a call is aborted; not a cap on the call. */
   readonly upstreamTimeoutMs: number
   /** How public model IDs are generated. */
   readonly publicModelIdMode: PublicModelIdMode

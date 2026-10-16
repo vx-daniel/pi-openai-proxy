@@ -221,7 +221,7 @@ Proxy-specific settings are configured via environment variables or the `/proxy 
 | Auth token | `PI_PROXY_AUTH_TOKEN` | (disabled) | Bearer token for proxy authentication |
 | Remote images | `PI_PROXY_REMOTE_IMAGES` | `false` | Allow remote image URL fetching |
 | Max body size | `PI_PROXY_MAX_BODY_SIZE` | `52428800` (50 MB) | Maximum request body size in bytes |
-| Upstream timeout | `PI_PROXY_UPSTREAM_TIMEOUT_MS` | `120000` (120s) | Upstream request timeout in milliseconds |
+| Upstream timeout | `PI_PROXY_UPSTREAM_TIMEOUT_MS` | `120000` (120s) | How long the upstream provider may send nothing (no thinking, text or tool-call data) before the call is aborted, in milliseconds (`upstreamTimeoutSec` in the config file, 5–600). It restarts with every event, so it never cuts off a long answer that keeps arriving. A non-streaming request that hits it gets `504`; a stream that already started gets an error event. |
 | Log level | `PI_PROXY_LOG_LEVEL` | `info` | Lowest level logged: `trace`, `debug`, `info`, `warning`, `error`, `fatal` (also `--log-level`, and `logLevel` in the config file) |
 | Log format | `PI_PROXY_LOG_FORMAT` | pretty on a terminal, `json` otherwise | `pretty` or `json` (also `--log-format`) |
 
@@ -376,7 +376,7 @@ Requires Pi 1.x (`^1.3.0`). Pi 1.0 is the first release whose Anthropic client i
 - Binds to `127.0.0.1` (localhost only) by default
 - Remote image URLs disabled by default
 - Request body size limited to 50 MB
-- Upstream timeout of 120 seconds
+- Upstream calls aborted after 120 seconds without any data from the provider
 - Secrets are never included in error responses
 - Client disconnects abort upstream work immediately
 

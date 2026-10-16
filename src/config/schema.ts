@@ -51,7 +51,7 @@ export interface ProxyConfig {
   readonly remoteImages: boolean
   /** Max request body in MB. Default: 50 */
   readonly maxBodySizeMb: number
-  /** Upstream timeout in seconds. Default: 120 */
+  /** Seconds the upstream provider may send nothing before a call is aborted. Default: 120 */
   readonly upstreamTimeoutSec: number
   /** "detached" = background daemon, "session" = dies with pi session. Default: "detached" */
   readonly lifetime: 'detached' | 'session'
