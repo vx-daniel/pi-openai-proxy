@@ -147,7 +147,8 @@ const main = defineCommand({
     },
     'upstream-timeout': {
       type: 'string',
-      description: 'Upstream timeout in seconds (default: 120)'
+      description:
+        'Seconds the upstream provider may send nothing before a call is aborted (default: 120)'
     },
     'log-level': {
       type: 'string',

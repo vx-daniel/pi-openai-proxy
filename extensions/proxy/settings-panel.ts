@@ -153,7 +153,7 @@ function serverSettingItems(config: ProxyConfig): SettingItem[] {
     {
       id: 'upstreamTimeoutSec',
       label: 'Upstream timeout',
-      description: 'Max seconds to wait for upstream provider response',
+      description: 'Max seconds the upstream provider may send nothing before the call is aborted',
       currentValue: `${String(config.upstreamTimeoutSec)}s`,
       values: ['30s', '60s', '120s', '300s']
     },

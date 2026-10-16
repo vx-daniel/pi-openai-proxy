@@ -1,7 +1,9 @@
 /**
  * Pi completion integration: non-streaming and streaming.
  *
- * Bridges validated OpenAI requests to pi's completeSimple() and streamSimple().
+ * Bridges validated OpenAI requests to pi's streamSimple(). A non-streaming request reads the
+ * stream's final message, as pi's own completeSimple() does, so both modes share the upstream
+ * idle timeout (`src/pi/upstream-idle.ts`).
  */
 
 import type {
@@ -16,6 +18,7 @@ import type {
 import { proxyLogger } from '@proxy/logging'
 import type { ChatCompletionRequest, OpenAIFunctionTool } from '@proxy/openai/schemas'
 import { getRuntime } from '@proxy/pi/registry'
+import { relayUpstreamActivity, startUpstreamIdleTimeout } from '@proxy/pi/upstream-idle'
 import { isRecord } from '@proxy/utils/guards'
 
 const completeLogger = proxyLogger('pi', 'complete')
@@ -452,29 +455,24 @@ export interface CompletionOptions {
   readonly upstreamApiKey?: string | undefined
   /** Abort signal for cancellation. */
   readonly signal?: AbortSignal | undefined
-  /** Upstream timeout in milliseconds. Creates a timeout-aware abort signal. */
+  /**
+   * The longest the provider may go without sending anything, in milliseconds. Restarts on every
+   * upstream event; it does not cap the call's total duration.
+   */
   readonly upstreamTimeoutMs?: number | undefined
 }
 
 /**
- * Combine a client disconnect signal with an upstream timeout into a single signal.
+ * Combine a client disconnect signal with the upstream idle timeout into a single signal.
  * Returns the combined signal, or undefined if neither is provided.
  */
-function buildCombinedSignal(
+function combineSignals(
   clientSignal: AbortSignal | undefined,
-  timeoutMs: number | undefined
+  idleSignal: AbortSignal | undefined
 ): AbortSignal | undefined {
-  if (clientSignal === undefined && timeoutMs === undefined) {
-    return undefined
-  }
-  if (timeoutMs === undefined) {
-    return clientSignal
-  }
-  const timeoutSignal = AbortSignal.timeout(timeoutMs)
-  if (clientSignal === undefined) {
-    return timeoutSignal
-  }
-  return AbortSignal.any([clientSignal, timeoutSignal])
+  if (clientSignal === undefined) return idleSignal
+  if (idleSignal === undefined) return clientSignal
+  return AbortSignal.any([clientSignal, idleSignal])
 }
 
 /**
@@ -483,7 +481,8 @@ function buildCombinedSignal(
 async function buildStreamOptions(
   model: Model<Api>,
   request: ChatCompletionRequest,
-  options: CompletionOptions
+  options: CompletionOptions,
+  signal: AbortSignal | undefined
 ): Promise<SimpleStreamOptions> {
   const opts: SimpleStreamOptions = {}
 
@@ -517,10 +516,9 @@ async function buildStreamOptions(
     }
   }
 
-  // Combine client disconnect signal with upstream timeout
-  const combinedSignal = buildCombinedSignal(options.signal, options.upstreamTimeoutMs)
-  if (combinedSignal !== undefined) {
-    opts.signal = combinedSignal
+  // The client disconnect signal combined with the upstream idle timeout
+  if (signal !== undefined) {
+    opts.signal = signal
   }
 
   // A per-request upstream key (X-Pi-Upstream-Api-Key) overrides everything. Without one, leave
@@ -698,8 +696,61 @@ function logUpstreamThrow(call: UpstreamCall, error: unknown): void {
   logUpstreamErrorDetail(error instanceof Error ? error.message : String(error))
 }
 
+/** What one upstream call needs: the model, pi's context, the OpenAI request and its options. */
+interface UpstreamInput {
+  readonly model: Model<Api>
+  readonly context: Context
+  readonly request: ChatCompletionRequest
+  readonly options: CompletionOptions
+}
+
 /**
- * Non-streaming completion: returns the final AssistantMessage.
+ * Start an upstream call: build the options, start the idle timeout, open pi's event stream and
+ * watch it. The result is logged once the stream ends with done or error.
+ */
+async function openUpstream(
+  input: UpstreamInput,
+  stream: boolean
+): Promise<AssistantMessageEventStream> {
+  const { model, context, request, options } = input
+  const idle =
+    options.upstreamTimeoutMs === undefined
+      ? undefined
+      : startUpstreamIdleTimeout(options.upstreamTimeoutMs)
+  let opts: SimpleStreamOptions
+  try {
+    opts = await buildStreamOptions(
+      model,
+      request,
+      options,
+      combineSignals(options.signal, idle?.signal)
+    )
+  } catch (error) {
+    idle?.dispose()
+    throw error
+  }
+  const call: UpstreamCall = { model, options, opts, stream, startedAt: performance.now() }
+  logUpstreamStart(call, context, request)
+  let eventStream: AssistantMessageEventStream
+  try {
+    eventStream = getRuntime().streamSimple(model, context, opts)
+  } catch (error) {
+    idle?.dispose()
+    logUpstreamThrow(call, error)
+    throw error
+  }
+  const watched =
+    idle === undefined
+      ? eventStream
+      : relayUpstreamActivity(eventStream, idle, options.signal, model)
+  // Resolves with the final message once the stream ends with done or error; it never rejects.
+  void watched.result().then((message) => logUpstreamResult(call, message))
+  return watched
+}
+
+/**
+ * Non-streaming completion: the stream's final AssistantMessage, which is all pi's
+ * completeSimple() returns, read here so the idle timeout sees every event.
  */
 export async function piComplete(
   model: Model<Api>,
@@ -707,17 +758,8 @@ export async function piComplete(
   request: ChatCompletionRequest,
   options: CompletionOptions
 ): Promise<AssistantMessage> {
-  const opts = await buildStreamOptions(model, request, options)
-  const call: UpstreamCall = { model, options, opts, stream: false, startedAt: performance.now() }
-  logUpstreamStart(call, context, request)
-  try {
-    const message = await getRuntime().completeSimple(model, context, opts)
-    logUpstreamResult(call, message)
-    return message
-  } catch (error) {
-    logUpstreamThrow(call, error)
-    throw error
-  }
+  const eventStream = await openUpstream({ model, context, request, options }, false)
+  return eventStream.result()
 }
 
 /**
@@ -729,17 +771,5 @@ export async function piStream(
   request: ChatCompletionRequest,
   options: CompletionOptions
 ): Promise<AssistantMessageEventStream> {
-  const opts = await buildStreamOptions(model, request, options)
-  const call: UpstreamCall = { model, options, opts, stream: true, startedAt: performance.now() }
-  logUpstreamStart(call, context, request)
-  let eventStream: AssistantMessageEventStream
-  try {
-    eventStream = getRuntime().streamSimple(model, context, opts)
-  } catch (error) {
-    logUpstreamThrow(call, error)
-    throw error
-  }
-  // Resolves with the final message once the stream ends with done or error; it never rejects.
-  void eventStream.result().then((message) => logUpstreamResult(call, message))
-  return eventStream
+  return openUpstream({ model, context, request, options }, true)
 }
