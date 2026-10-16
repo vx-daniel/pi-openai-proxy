@@ -133,3 +133,5 @@ Stop and confirm with the user before:
 ## Scope of this file
 
 A single repo-root `AGENTS.md` is enough for the current tree. Add nested `AGENTS.md` files only if a subtree develops a genuinely different workflow or safety boundary.
+
+`CLAUDE.md` is a symlink to this file, so Claude Code (and the Claude PR review) load the same rules. Edit `AGENTS.md`; never replace the symlink with a copy.

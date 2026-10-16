@@ -144,11 +144,12 @@ jobs:
             1. `gh pr diff $PR_NUMBER`: read the full diff
             2. For non-trivial changes, `Read` the surrounding file for context
             3. Apply project conventions:
-               - `Read` `AGENTS.md` and follow it: it is this repository's always-on rule set
-                 (stable HTTP surface, model ID policy, header contracts, coding rules)
+               - `AGENTS.md` (also `CLAUDE.md`, a symlink to it, so it is auto-loaded) is this
+                 repository's always-on rule set — stable HTTP surface, model ID policy, header
+                 contracts, coding rules. If it is not already in your context, `Read` it. Follow it.
                - `Read` the sections of `PLAN.md` the diff touches: it holds the API compatibility
                  policy and the security boundaries
-               - If `CLAUDE.md` or `.claude/rules/*.md` exist, treat them as additional hard rules
+               - If `.claude/rules/*.md` exist, treat each as an additional hard rule
             4. Cover these aspects inline (do NOT spawn separate agents):
                - **Code** — bugs, logic errors, race conditions, convention compliance
                - **Tests** — coverage gaps for changed code; mocks must stub the full module surface
