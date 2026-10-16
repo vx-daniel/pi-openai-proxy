@@ -5,15 +5,24 @@
  * arriving is never cut off, while a call that stalls (no response, or a stream that stops) is
  * aborted after `idleMs`. It replaced a timeout on the whole call, which cut off long thinking and
  * long streamed answers mid-text.
+ *
+ * The first wait starts with the call, before pi resolves credentials, so a hung credential lookup
+ * (an OAuth refresh, a key command) is bounded by the same limit as the first response byte.
  */
 
 import {
+  type Api,
+  type AssistantMessage,
   type AssistantMessageEvent,
   type AssistantMessageEventStream,
-  createAssistantMessageEventStream
+  createAssistantMessageEventStream,
+  type Model
 } from '@earendil-works/pi-ai'
+import { proxyLogger } from '@proxy/logging'
 
 const MS_PER_SECOND = 1000
+
+const relayLogger = proxyLogger('pi', 'complete')
 
 /** An abort signal that fires once `touch()` has not been called for `idleMs`. */
 export interface UpstreamIdleTimeout {
@@ -66,8 +75,35 @@ function observe(
     idle.touch()
   } else if (idle.signal.aborted && clientSignal?.aborted !== true) {
     // The idle timeout, not the client leaving, ended the call: say so instead of the provider
-    // SDK's generic "aborted".
+    // SDK's generic "aborted". In place on purpose: this object is also the stream's final
+    // message, which the route answers with and the upstream log line reads, so a copy would
+    // leave both with the generic text.
     event.error.errorMessage = idleTimeoutMessage(idle.idleMs)
+  }
+}
+
+/** What the relay needs to know about the model: enough to name it in a failure. */
+type RelayedModel = Pick<Model<Api>, 'api' | 'provider' | 'id'>
+
+/** The final message for a relay that failed: pi's streams are not meant to throw, but if one does. */
+function relayFailure(model: RelayedModel): AssistantMessage {
+  return {
+    role: 'assistant',
+    content: [],
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+    },
+    stopReason: 'error',
+    errorMessage: 'Upstream stream failed',
+    timestamp: Date.now()
   }
 }
 
@@ -79,29 +115,41 @@ function observe(
  * Only pi's public stream API is used (async iteration, `createAssistantMessageEventStream`). The
  * relay reads as fast as the provider writes, whatever the client does with the relayed stream
  * (both queue without limit), so a client that reads slowly cannot make an active upstream look
- * idle.
+ * idle. If reading the upstream stream throws, the relayed stream ends with an error event rather
+ * than never settling.
  */
 export function relayUpstreamActivity(
   upstream: AssistantMessageEventStream,
   idle: UpstreamIdleTimeout,
-  clientSignal: AbortSignal | undefined
+  clientSignal: AbortSignal | undefined,
+  model: RelayedModel
 ): AssistantMessageEventStream {
   const relayed = createAssistantMessageEventStream()
+  let terminated = false
   const relay = async (): Promise<void> => {
-    let terminated = false
-    try {
-      for await (const event of upstream) {
-        observe(event, idle, clientSignal)
-        terminated ||= event.type === 'done' || event.type === 'error'
-        relayed.push(event)
-      }
-    } finally {
-      idle.dispose()
+    for await (const event of upstream) {
+      observe(event, idle, clientSignal)
+      terminated ||= event.type === 'done' || event.type === 'error'
+      relayed.push(event)
     }
     // A done or error event already settled the relayed stream. Otherwise the provider ended the
     // stream without one: pass on whatever result it ended with.
     if (!terminated) relayed.end(await upstream.result())
   }
-  void relay()
+  relay()
+    .catch((error: unknown) => {
+      relayLogger.warn('Reading the upstream stream failed for {provider}/{modelId}', {
+        provider: model.provider,
+        modelId: model.id,
+        afterFinalEvent: terminated
+      })
+      relayLogger.debug('Upstream stream failure detail: {detail}', {
+        detail: error instanceof Error ? error.message : String(error)
+      })
+      if (!terminated) relayed.push({ type: 'error', reason: 'error', error: relayFailure(model) })
+    })
+    .finally(() => {
+      idle.dispose()
+    })
   return relayed
 }

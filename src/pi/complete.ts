@@ -740,7 +740,9 @@ async function openUpstream(
     throw error
   }
   const watched =
-    idle === undefined ? eventStream : relayUpstreamActivity(eventStream, idle, options.signal)
+    idle === undefined
+      ? eventStream
+      : relayUpstreamActivity(eventStream, idle, options.signal, model)
   // Resolves with the final message once the stream ends with done or error; it never rejects.
   void watched.result().then((message) => logUpstreamResult(call, message))
   return watched

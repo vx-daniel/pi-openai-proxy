@@ -5,6 +5,7 @@
 import {
   type AssistantMessage,
   type AssistantMessageEvent,
+  type AssistantMessageEventStream,
   createAssistantMessageEventStream
 } from '@earendil-works/pi-ai'
 import { relayUpstreamActivity, startUpstreamIdleTimeout } from '@proxy/pi/upstream-idle'
@@ -55,11 +56,24 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+const MODEL = { api: 'openai-completions', provider: 'mock', id: 'm1' } as const
+
 function relayed(clientSignal?: AbortSignal) {
   const idle = startUpstreamIdleTimeout(IDLE_MS)
   const upstream = createAssistantMessageEventStream()
-  const downstream = relayUpstreamActivity(upstream, idle, clientSignal)
+  const downstream = relayUpstreamActivity(upstream, idle, clientSignal, MODEL)
   return { idle, upstream, downstream }
+}
+
+/** A pi stream whose iteration throws after one event, which pi's own streams never do. */
+function throwingStream(): AssistantMessageEventStream {
+  const stream = createAssistantMessageEventStream()
+  stream[Symbol.asyncIterator] = async function* () {
+    yield textDelta
+    await Promise.resolve()
+    throw new Error('notarealsecret-upstream-detail')
+  }
+  return stream
 }
 
 async function collect(stream: AsyncIterable<AssistantMessageEvent>): Promise<string[]> {
@@ -144,6 +158,20 @@ describe('upstream idle timeout', () => {
     await downstream.result()
     await vi.advanceTimersByTimeAsync(IDLE_MS * 2)
 
+    expect(idle.signal.aborted).toBe(false)
+  })
+
+  // Catches a throwing upstream leaving the response hanging forever (and an unhandled rejection),
+  // or its raw error text reaching the client.
+  test('ends with an error event if reading the upstream stream throws', async () => {
+    const idle = startUpstreamIdleTimeout(IDLE_MS)
+    const downstream = relayUpstreamActivity(throwingStream(), idle, undefined, MODEL)
+
+    expect(await collect(downstream)).toEqual(['text_delta', 'error'])
+    const final = await downstream.result()
+    expect(final.stopReason).toBe('error')
+    expect(final.errorMessage).toBe('Upstream stream failed')
+    await vi.advanceTimersByTimeAsync(IDLE_MS * 2)
     expect(idle.signal.aborted).toBe(false)
   })
 })
