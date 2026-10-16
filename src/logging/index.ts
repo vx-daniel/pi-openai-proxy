@@ -77,16 +77,26 @@ export const REDACTED_FIELDS: readonly string[] = [
 /** `pretty` for a person at a terminal, `json` (JSON Lines) for anything that parses logs. */
 export type LogFormat = 'pretty' | 'json'
 
+export const LOG_FORMATS: readonly LogFormat[] = ['pretty', 'json']
+
+export function isLogFormat(value: string): value is LogFormat {
+  return value === 'pretty' || value === 'json'
+}
+
 /** Pretty when stderr is a terminal, JSON Lines when it is piped or redirected. */
 export function defaultLogFormat(): LogFormat {
   return process.stderr.isTTY ? 'pretty' : 'json'
 }
 
 function formatterFor(format: LogFormat): TextFormatter {
+  // JSON keeps LogTape's UTC `@timestamp`: unambiguous for anything that parses or ships logs.
   if (format === 'json') return jsonLinesFormatter
-  // `bare` prints strings without quotes: a terminal reader wants `GET /v1/models`, not `'GET'`.
+  // A person reads local time: `timeZone: null` is the system zone (the `TZ` variable in a
+  // container), with the offset shown so a line is never ambiguous. `bare` prints strings without
+  // quotes: a reader wants `GET /v1/models`, not `'GET'`.
   return getPrettyFormatter({
-    timestamp: 'time',
+    timestamp: 'date-time-tz',
+    timeZone: null,
     categoryWidth: 32,
     value: 'bare',
     wordWrap: false

@@ -118,6 +118,26 @@ describe('chat request logging', () => {
     expect(http.map((record) => record.properties['requestId'])).toEqual([requestId, requestId])
     expect(http[1]?.properties).toMatchObject({ method: 'GET', path: '/v1/models', status: 200 })
   })
+
+  // Catches a healthcheck or a client polling the model list flooding the default-level log, or a
+  // failing model list being hidden with it.
+  test('logs a successful model list at debug and a failed one at info', async () => {
+    lines = []
+    configureLogging({ level: 'info', format: 'json', write: (line) => lines.push(line) })
+    const authApp = testApp({ ...testConfig(), proxyAuthToken: 'notarealsecret-token' })
+
+    await app.request('/v1/models')
+    expect(logged('pi-openai-proxy.server.http')).toEqual([])
+
+    const rejected = await authApp.request('/v1/models')
+    expect(rejected.status).toBe(401)
+    const answered = logged('pi-openai-proxy.server.http').filter((record) =>
+      record.message.includes('answered')
+    )
+    expect(answered.map((record) => [record.level, record.properties['status']])).toEqual([
+      ['INFO', 401]
+    ])
+  })
 })
 
 describe('proxy auth logging', () => {

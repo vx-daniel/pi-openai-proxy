@@ -2,6 +2,9 @@
  * HTTP status codes used by the proxy's routes and middleware.
  */
 
+/** The first status that is not a success (2xx). */
+export const HTTP_MULTIPLE_CHOICES = 300
+
 export const HTTP_BAD_REQUEST = 400
 export const HTTP_UNAUTHORIZED = 401
 export const HTTP_NOT_FOUND = 404

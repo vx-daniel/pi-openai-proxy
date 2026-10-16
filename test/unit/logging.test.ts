@@ -4,7 +4,7 @@
 
 import { resetSync } from '@logtape/logtape'
 import { configureLogging, proxyLogger, type LogFormat } from '@proxy/logging'
-import { afterEach, describe, expect, test } from 'vite-plus/test'
+import { afterEach, describe, expect, test, vi } from 'vite-plus/test'
 
 let lines: string[] = []
 
@@ -106,5 +106,21 @@ describe('pretty output', () => {
     expect(lines[0]).toContain('Listening on')
     expect(lines[0]).toContain('4141')
     expect(lines[0]?.trimStart().startsWith('{')).toBe(false)
+  })
+
+  // Catches the terminal format falling back to UTC: a person reads the zone the machine (or the
+  // container's `TZ`) is in, with the offset shown, and the date, for long-running containers.
+  test('stamps each line with the local date, time and offset', () => {
+    vi.stubEnv('TZ', 'Asia/Tokyo')
+    try {
+      capture('info', 'pretty')
+      proxyLogger('server').info('Listening')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+
+    // oxlint-disable-next-line no-control-regex -- strips the formatter's ANSI color codes
+    const plain = (lines[0] ?? '').replaceAll(/\u001b\[[0-9;]*m/g, '')
+    expect(plain).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} \+09 /)
   })
 })

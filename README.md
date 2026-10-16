@@ -203,14 +203,19 @@ Proxy-specific settings are configured via environment variables or the `/proxy 
 | Max body size | `PI_PROXY_MAX_BODY_SIZE` | `52428800` (50 MB) | Maximum request body size in bytes |
 | Upstream timeout | `PI_PROXY_UPSTREAM_TIMEOUT_MS` | `120000` (120s) | Upstream request timeout in milliseconds |
 | Log level | `PI_PROXY_LOG_LEVEL` | `info` | Lowest level logged: `trace`, `debug`, `info`, `warning`, `error`, `fatal` (also `--log-level`, and `logLevel` in the config file) |
+| Log format | `PI_PROXY_LOG_FORMAT` | pretty on a terminal, `json` otherwise | `pretty` or `json` (also `--log-format`) |
 
 ### Logging
 
 The proxy logs with [LogTape](https://logtape.org) to stderr:
-- **On a terminal:** readable, colored lines.
-- **When piped or redirected:** [JSON Lines](https://jsonlines.org), one object per record with `@timestamp`, `level`, `logger` (the category, e.g. `pi-openai-proxy.server.http`), `message` and `properties`.
+- **Pretty** ([@logtape/pretty](https://jsr.io/@logtape/pretty)): readable, colored lines stamped with the local date, time and UTC offset (in a container, set `TZ`, e.g. `TZ=America/Chicago`). The default on a terminal.
+- **JSON** ([JSON Lines](https://jsonlines.org)): one object per record with `@timestamp` (UTC), `level`, `logger` (the category, e.g. `pi-openai-proxy.server.http`), `message` and `properties`. The default when stderr is piped or redirected, as in `docker logs`.
 
-An invalid `--log-level` stops the proxy from starting and lists the valid levels. An invalid `PI_PROXY_LOG_LEVEL` is ignored with a warning, and an invalid `logLevel` in the config file falls back to `info`, so a bad value in either never keeps a background proxy from starting.
+`PI_PROXY_LOG_FORMAT` (or `--log-format`) picks one regardless of the terminal, for example `pretty` for reading `docker compose logs` directly.
+
+A successful `GET /v1/models` (what healthchecks and clients poll) is logged at `debug`; a failed one stays at `info`.
+
+An invalid `--log-level` or `--log-format` stops the proxy from starting and lists the valid values. An invalid `PI_PROXY_LOG_LEVEL` or `PI_PROXY_LOG_FORMAT` is ignored with a warning, and an invalid `logLevel` in the config file falls back to `info`, so a bad value in either never keeps a background proxy from starting.
 
 If proxy auth is off and the proxy binds to anything other than a loopback address, it logs a warning at startup: any client that can reach the port can use your provider credentials.
 
