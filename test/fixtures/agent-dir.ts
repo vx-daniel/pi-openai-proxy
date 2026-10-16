@@ -27,6 +27,25 @@ export interface FixtureAgentDir {
 
 const OWNER_ONLY = 0o600
 
+/** A base URL nothing listens on: a request that reaches it fails at once, on this machine. */
+const UNREACHABLE_BASE_URL = 'http://127.0.0.1:9/v1'
+
+/**
+ * A `models.json` provider entry with a literal fake key and these models, at an address nothing
+ * listens on: for tests whose requests are answered (or refused) before any upstream call.
+ * A model is a bare ID, or an object for extra fields such as `input: ['text', 'image']`.
+ */
+export function offlineProvider(
+  ...models: (string | { readonly id: string; readonly [field: string]: unknown })[]
+): Record<string, unknown> {
+  return {
+    baseUrl: UNREACHABLE_BASE_URL,
+    api: 'openai-completions',
+    apiKey: 'notarealsecret-fixture-provider-key',
+    models: models.map((model) => (typeof model === 'string' ? { id: model } : model))
+  }
+}
+
 /**
  * Write the files into a new temp directory, point pi at it (`PI_CODING_AGENT_DIR`) and load pi's
  * model runtime from it.

@@ -1,26 +1,45 @@
 /**
  * Request logging through the real app, at the most verbose level.
  *
- * Like the other chat-validation tests, this uses the first model the registry offers and returns
- * early when none is available (no credentials). It sends a request that the proxy rejects after
+ * The model is a fixture provider (literal key, unreachable base URL). Requests are rejected after
  * the model resolves and before any upstream call, so nothing leaves the machine.
  */
 
 import { resetSync } from '@logtape/logtape'
 import { configureLogging } from '@proxy/logging'
-import { getAvailableModels, initRegistry } from '@proxy/pi/registry'
 import type { ProxyEnv } from '@proxy/server/types'
 import type { Hono } from 'hono'
-import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'vite-plus/test'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi
+} from 'vite-plus/test'
 
+import { type FixtureAgentDir, loadFixtureAgentDir, offlineProvider } from '../fixtures/agent-dir'
 import { testApp, testConfig } from '../helpers'
 
+const FIXTURE_PROVIDER = 'log-fixture'
+const FIXTURE_MODEL = `${FIXTURE_PROVIDER}/model`
+
 let app: Hono<ProxyEnv>
+let agentDir: FixtureAgentDir
 let lines: string[] = []
 
 beforeAll(async () => {
-  await initRegistry()
+  agentDir = await loadFixtureAgentDir({
+    modelsJson: { providers: { [FIXTURE_PROVIDER]: offlineProvider('model') } }
+  })
   app = testApp()
+})
+
+afterAll(() => {
+  vi.unstubAllEnvs()
+  agentDir.remove()
 })
 
 // Trace, the most verbose level: no log line at any level may carry message content.
@@ -58,9 +77,7 @@ describe('chat request logging', () => {
   // Catches the chat line not being written, or written with the wrong ids, once a model resolves;
   // and any log line, at any level, carrying the prompt.
   test('logs the requested and resolved model once, with the request ids, and never the prompt', async () => {
-    const first = getAvailableModels()[0]
-    if (first === undefined) return
-    const canonicalId = `${first.provider}/${first.id}`
+    const canonicalId = FIXTURE_MODEL
 
     const response = await app.request('/v1/chat/completions', {
       method: 'POST',
@@ -83,7 +100,7 @@ describe('chat request logging', () => {
       requestId: response.headers.get('x-request-id'),
       requestedModel: canonicalId,
       model: canonicalId,
-      provider: first.provider,
+      provider: FIXTURE_PROVIDER,
       stream: true
     })
     expect(lines.join('')).not.toContain('this text must never be logged')
