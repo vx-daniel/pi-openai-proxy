@@ -1,10 +1,11 @@
 /**
- * A local mock of an OpenAI-compatible provider (`POST /v1/chat/completions`, pi's
- * `openai-completions` API) for tests that need a real upstream: pi's real provider code calls it
- * over real HTTP on 127.0.0.1, and each model ID is answered by a scripted reply. It records every
- * request it receives, so a test can check what pi sent.
+ * A local mock provider for tests that need a real upstream: pi's real provider code calls it over
+ * real HTTP on 127.0.0.1, and each model ID is answered by a reply. The scripted replies below speak
+ * OpenAI's chat completions SSE (pi's `openai-completions` API); `replay` from
+ * `test/fixtures/recording.ts` serves recorded real traffic of any API, such as
+ * `anthropic-messages`. It records every request it receives, so a test can check what pi sent.
  *
- * Point a fixture `models.json` at it with `mock.provider(...)` (see `test/fixtures/agent-dir.ts`).
+ * Point a fixture `models.json` at it with `mock.provider(api)` (see `test/fixtures/agent-dir.ts`).
  */
 
 import { once } from 'node:events'
@@ -23,14 +24,16 @@ export interface MockRequest {
 export type MockReply = (response: ServerResponse, request: MockRequest) => void | Promise<void>
 
 export interface MockProvider {
-  readonly baseUrl: string
+  /** `http://127.0.0.1:<port>`, without an API path prefix. */
+  readonly origin: string
   /** Every request received, in order. */
   readonly requests: readonly MockRequest[]
   /**
    * A `models.json` provider entry pointing at this server, with a literal fake key and one model
-   * per scripted reply.
+   * per scripted reply. `openai-completions` (the default) puts `/v1` in the base URL, as OpenAI
+   * clients expect; `anthropic-messages` does not, because Anthropic's client adds it.
    */
-  provider(): Record<string, unknown>
+  provider(api?: 'openai-completions' | 'anthropic-messages'): Record<string, unknown>
   close(): Promise<void>
 }
 
@@ -85,14 +88,14 @@ export async function startMockProvider(
   await once(server, 'listening')
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('mock provider not on TCP')
-  const baseUrl = `http://127.0.0.1:${String(address.port)}/v1`
+  const origin = `http://127.0.0.1:${String(address.port)}`
 
   return {
-    baseUrl,
+    origin,
     requests,
-    provider: () => ({
-      baseUrl,
-      api: 'openai-completions',
+    provider: (api = 'openai-completions') => ({
+      baseUrl: api === 'openai-completions' ? `${origin}/v1` : origin,
+      api,
       apiKey: 'notarealsecret-mock-provider-key',
       models: Object.keys(replies).map((modelId) => ({ id: modelId }))
     }),

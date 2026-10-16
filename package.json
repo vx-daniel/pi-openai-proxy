@@ -59,6 +59,7 @@
     "lint": "vp lint",
     "test:ci": "vp test --project offline",
     "test:live": "PI_PROXY_LIVE_TESTS=1 vp test --project live",
+    "test:live:record": "node scripts/record-fixtures.ts",
     "build": "vp pack",
     "prepare": "vp config --no-agent && vp pack",
     "prepack": "vp pack",

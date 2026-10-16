@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "api": "anthropic-messages",
+  "scenario": "model-not-found",
+  "model": "claude-recorder-no-such-model",
+  "recordedAt": "2026-10-16T17:33:12.960Z",
+  "piVersion": "1.3.0",
+  "request": {
+    "path": "/v1/messages?beta=true",
+    "headers": {
+      "anthropic-version": "2023-06-01",
+      "user-agent": "claude-cli/2.1.280",
+      "x-app": "cli",
+      "content-type": "application/json",
+      "anthropic-beta": "claude-code-20250219,oauth-2025-04-20,mid-conversation-output-config-2026-07-01,thinking-binding-controls-2026-08-01"
+    },
+    "body": {
+      "model": "claude-recorder-no-such-model",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Hello",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ]
+        }
+      ],
+      "max_tokens": 16,
+      "stream": true,
+      "system": [
+        {
+          "type": "text",
+          "text": "You are Claude Code, Anthropic's official CLI for Claude.",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      ],
+      "thinking": {
+        "type": "disabled"
+      }
+    }
+  },
+  "response": {
+    "status": 404,
+    "contentType": "application/json",
+    "chunks": [
+      "{\"type\":\"error\",\"error\":{\"type\":\"not_found_error\",\"message\":\"model: claude-recorder-no-such-model\"},\"request_id\":\"req_011Cg6KL5Wbsq1d4fvW4HBA9\"}"
+    ]
+  }
+}
